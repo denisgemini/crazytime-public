@@ -1,0 +1,24 @@
+# Entorno virtual
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Datos sensibles
+.env
+
+# Datos generados
+data/
+*.db
+*.sqlite3
+
+# Backups y temporales
+*.backup
+*.log
+*~
+_temp*
+
+# IDE
+.vscode/
+.idea/

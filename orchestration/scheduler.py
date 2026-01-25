@@ -1,0 +1,356 @@
+"""
+orchestration/scheduler.py - Orquestador principal del sistema.
+"""
+
+import os
+import logging
+import time
+from datetime import datetime, timedelta
+from typing import Optional
+
+from dotenv import load_dotenv
+
+from core.collector import DataCollector
+from core.database import Database
+from analytics.pattern_tracker import PatternTracker
+from alerting.alert_manager import AlertManager
+from alerting.notification import TelegramNotifier
+
+logger = logging.getLogger(__name__)
+
+class CrazyTimeScheduler:
+    """Orquestador del sistema CrazyTime."""
+
+    def __init__(self):
+        load_dotenv()
+        self.db = Database("data/db.sqlite3")
+        self.collector = DataCollector("data/db.sqlite3")
+        self.tracker = PatternTracker("data/db.sqlite3")
+        self.alert_manager = AlertManager("data/db.sqlite3")
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            logger.warning("⚠️ Credenciales de Telegram no configuradas")
+            self.notifier = None
+        else:
+            self.notifier = TelegramNotifier(token, chat_id)
+        self.daily_summary_file = "data/.last_summary"
+        self.backup_control_file = "data/backups/.last_backup"
+        self.last_run_file = "data/.scheduler_last_run"  # CAMBIO 7: Archivo para tracking de última ejecución
+
+    def run(self):
+        try:
+            logger.info("=" * 70)
+            logger.info("🚀 INICIANDO CICLO DE ACTUALIZACIÓN")
+            logger.info("=" * 70)
+
+            # CAMBIO 5: Primero actualizar datos, luego verificar brechas
+            new_spins = self._update_data()
+            if new_spins == 0:
+                logger.info("✅ No hay datos nuevos, ciclo completado")
+                self._update_last_run()  # CAMBIO 7: Registrar ejecución
+                return
+
+            # CAMBIO 5: Ahora verificar brechas DESPUÉS de actualizar datos
+            self._check_service_gap()
+
+            self._process_tracking()
+            self._process_alerts()
+
+            # PASO 3.5: Análisis de ventanas
+            self._run_window_analysis()
+            self._scheduled_tasks()
+
+            self._update_last_run()  # CAMBIO 7: Registrar ejecución
+
+            logger.info("=" * 70)
+            logger.info("✅ CICLO COMPLETADO EXITOSAMENTE")
+            logger.info("=" * 70)
+        except Exception as e:
+            logger.error(f"❌ ERROR CRÍTICO EN CICLO: {e}", exc_info=True)
+            self._send_error_alert(e)
+
+    def _update_last_run(self):
+        """CAMBIO 7: Registra timestamp de última ejecución"""
+        try:
+            os.makedirs(os.path.dirname(self.last_run_file), exist_ok=True)
+            with open(self.last_run_file, "w") as f:
+                f.write(datetime.now().isoformat())
+        except Exception as e:
+            logger.error(f"Error guardando last_run: {e}")
+
+    def _check_service_gap(self):
+        """
+        CAMBIO 6: Detección inteligente de brechas usando heartbeat (11s threshold).
+
+        Heartbeat = started_at(último) - timestamp(anterior al último)
+        Normal: ~5 segundos
+        Brecha: > 11 segundos
+        """
+        try:
+            max_id = self.db.get_max_id()
+            if max_id is None or max_id < 2:
+                logger.debug("⚠️ Base de datos con menos de 2 registros")
+                return
+
+            last_spin = self.db.get_spin_by_id(max_id)
+            if not last_spin or not last_spin.get("started_at"):
+                logger.debug("⚠️ Último registro sin started_at")
+                return
+
+            prev_spin = self.db.get_spin_by_id(max_id - 1)
+            if not prev_spin:
+                logger.debug("⚠️ No existe registro anterior")
+                return
+
+            # Calcular heartbeat
+            try:
+                current_start = datetime.fromisoformat(last_spin["started_at"])
+                prev_ts = datetime.fromisoformat(prev_spin["timestamp"])
+                heartbeat = (current_start - prev_ts).total_seconds()
+            except Exception as e:
+                logger.error(f"Error calculando heartbeat: {e}")
+                return
+
+            # CAMBIO 6: Umbral de 11 segundos (5s normal + 6s tolerancia)
+            GAP_THRESHOLD = 11.0
+
+            if heartbeat > GAP_THRESHOLD:
+                gap_minutes = heartbeat / 60
+                logger.warning(f"🚨 BRECHA DE SERVICIO DETECTADA: {heartbeat:.1f}s ({gap_minutes:.1f} min)")
+                self._log_service_gap(heartbeat, last_spin["timestamp"], prev_spin["timestamp"])
+
+                # Recalibrar solo si la brecha es significativa (> 1 minuto)
+                if gap_minutes > 1:
+                    logger.info("🔄 Recalibrando sistemas...")
+                    self.tracker.reset_calibration()
+                    self.alert_manager.reset_states()
+
+                    if self.notifier:
+                        self.notifier.send_message(
+                            f"⚠️ <b>RECONEXIÓN DESPUÉS DE BRECHA</b>\n\n"
+                            f"⏱️ Brecha: {heartbeat:.1f}s ({gap_minutes:.1f} min)\n"
+                            f"🔄 Sistemas recalibrados\n"
+                            f"✅ Operación restaurada"
+                        )
+            else:
+                logger.debug(f"✅ Heartbeat normal: {heartbeat:.1f}s")
+
+        except Exception as e:
+            logger.error(f"Error verificando brechas: {e}")
+
+    def _log_service_gap(self, gap_seconds: float, last_timestamp: str, prev_timestamp: str):
+        """CAMBIO 6: Registrar brecha con información mejorada"""
+        try:
+            os.makedirs("data", exist_ok=True)
+            bitacora = "data/bitacora_brechas.csv"
+            if not os.path.exists(bitacora):
+                with open(bitacora, "w") as f:
+                    f.write("Fecha_Deteccion,Fecha_Ultimo_Dato,Fecha_Dato_Anterior,Brecha_Segundos,Brecha_Minutos\n")
+
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            gap_minutes = gap_seconds / 60
+            line = f"{now_str},{last_timestamp},{prev_timestamp},{gap_seconds:.1f},{gap_minutes:.2f}\n"
+
+            with open(bitacora, "a") as f:
+                f.write(line)
+            logger.info(f"📝 Brecha registrada: {gap_seconds:.1f}s ({gap_minutes:.1f} min)")
+        except Exception as e:
+            logger.error(f"Error registrando brecha: {e}")
+
+    def _update_data(self) -> int:
+        try:
+            logger.info("📡 Consultando API...")
+            new_count = self.collector.fetch_and_store()
+            return new_count
+        except Exception as e:
+            logger.error(f"❌ Error actualizando datos: {e}", exc_info=True)
+            return 0
+
+    def _process_tracking(self):
+        try:
+            logger.info("📊 Procesando tracking de distancias...")
+            processed = self.tracker.process_new_spins()
+            if processed > 0:
+                logger.info(f"✅ Tracking: {processed} tiros procesados")
+                from config.patterns import VIP_PATTERNS
+                for pattern in VIP_PATTERNS:
+                    stats = self.tracker.get_pattern_statistics(pattern.id)
+                    if stats:
+                        logger.info(f"   📈 {pattern.name}: Media={stats.get('mean', 0):.1f}, Mediana={stats.get('median', 0)}, Total={stats.get('count', 0)}")
+        except Exception as e:
+            logger.error(f"❌ Error en tracking: {e}", exc_info=True)
+
+    def _process_alerts(self):
+        try:
+            logger.info("🚨 Evaluando alertas...")
+            alerts = self.alert_manager.check_all_patterns()
+            if not alerts:
+                logger.info("✅ Sin alertas que enviar")
+                return
+            logger.info(f"📤 {len(alerts)} alertas detectadas")
+            if not self.notifier:
+                logger.warning("⚠️ Notificador no disponible, alertas no enviadas")
+                return
+            for alert in alerts:
+                try:
+                    self.notifier.send_alert(alert)
+                    logger.info(f"✅ Alerta enviada: {alert.pattern_name} ({alert.type.value})")
+                except Exception as e:
+                    logger.error(f"Error enviando alerta: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error procesando alertas: {e}", exc_info=True)
+
+    def _run_window_analysis(self):
+        """
+        Ejecuta análisis de ventanas si hay datos suficientes.
+
+        Criterio: Al menos 10 apariciones de algún patrón VIP.
+        """
+        try:
+            from analytics.window_analyzer import WindowAnalyzer
+            from config.patterns import VIP_PATTERNS
+
+            # Verificar si hay suficientes datos
+            should_analyze = False
+
+            for pattern in VIP_PATTERNS:
+                stats = self.tracker.get_pattern_statistics(pattern.id)
+                count = stats.get('count', 0)
+
+                if count >= 10:
+                    should_analyze = True
+                    logger.debug(f"📊 {pattern.name}: {count} apariciones (suficiente para análisis)")
+                    break
+
+            if not should_analyze:
+                logger.debug("📊 Analytics: Datos insuficientes (<10 apariciones)")
+                return
+
+            logger.info("📊 Ejecutando análisis de ventanas...")
+
+            analyzer = WindowAnalyzer('data/db.sqlite3')
+            results = analyzer.analyze_all_patterns()
+
+            # Log de resultados
+            for pattern_id, data in results.items():
+                pattern_name = data.get('pattern_name', pattern_id)
+                thresholds = data.get('thresholds', {})
+
+                for threshold_str, metrics in thresholds.items():
+                    roi = metrics.get('roi', 0)
+                    hit_rate = metrics.get('hit_rate', 0)
+                    logger.info(
+                        f"   📈 {pattern_name} (umbral {threshold_str}): "
+                        f"ROI={roi:+.1f}%, Hit Rate={hit_rate:.1f}%"
+                    )
+
+            logger.info("✅ Análisis de ventanas completado")
+
+        except Exception as e:
+            logger.error(f"❌ Error en análisis de ventanas: {e}", exc_info=True)
+
+    def _scheduled_tasks(self):
+        try:
+            if self._should_send_daily_summary():
+                self._send_daily_summary()
+            if self._should_run_backup():
+                self._run_backup()
+        except Exception as e:
+            logger.error(f"❌ Error en tareas programadas: {e}")
+
+    def _should_send_daily_summary(self) -> bool:
+        try:
+            now = datetime.now()  # FIXED: Server already in America/Lima timezone
+            hour = now.hour
+            minute = now.minute
+            today = now.strftime("%Y-%m-%d")
+            if not (hour == 23 and minute >= 55):
+                return False
+            if os.path.exists(self.daily_summary_file):
+                with open(self.daily_summary_file, "r") as f:
+                    last_date = f.read().strip()
+                    if last_date == today:
+                        return False
+            return True
+        except Exception as e:
+            logger.error(f"Error verificando resumen diario: {e}")
+            return False
+
+    def _send_daily_summary(self):
+        try:
+            logger.info("📊 Generando resumen diario...")
+            stats = self.db.obtener_estadisticas_dia()
+            if not stats or stats["total_spins"] == 0:
+                logger.info("ℹ️ Sin datos para resumen diario")
+                return
+            if self.notifier:
+                self.notifier.enviar_resumen_diario(stats)
+                today = datetime.now().strftime("%Y-%m-%d")
+                os.makedirs(os.path.dirname(self.daily_summary_file), exist_ok=True)
+                with open(self.daily_summary_file, "w") as f:
+                    f.write(today)
+                logger.info("✅ Resumen diario enviado")
+        except Exception as e:
+            logger.error(f"❌ Error enviando resumen diario: {e}")
+
+    def _should_run_backup(self) -> bool:
+        try:
+            if not os.path.exists(self.backup_control_file):
+                return True
+            last_backup = os.path.getmtime(self.backup_control_file)
+            hours_since = (time.time() - last_backup) / 3600
+            return hours_since >= 24
+        except Exception as e:
+            logger.error(f"Error verificando backup: {e}")
+            return False
+
+    def _run_backup(self):
+        try:
+            logger.info("💾 Ejecutando backup automático...")
+            from scripts.auto_backup import ejecutar_backup_si_necesario
+            ejecutar_backup_si_necesario(
+                db_path="data/db.sqlite3",
+                backup_dir="data/backups",
+                notifier=self.notifier
+            )
+            logger.info("✅ Backup completado")
+        except Exception as e:
+            logger.error(f"❌ Error en backup: {e}")
+
+    def _send_error_alert(self, error: Exception):
+        try:
+            if self.notifier:
+                self.notifier.send_message(
+                    f"🚨 <b>ERROR CRÍTICO EN SISTEMA</b>\n\n"
+                    f"<code>{type(error).__name__}: {str(error)}</code>\n\n"
+                    f"Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Revisar logs del sistema"
+                )
+        except:
+            pass
+
+
+def setup_logging():
+    """Configura sistema de logging."""
+    os.makedirs("data/logs", exist_ok=True)
+    from logging.handlers import RotatingFileHandler
+    file_handler = RotatingFileHandler(
+        "data/logs/system.log",
+        maxBytes=10*1024*1024,
+        backupCount=30,
+        encoding="utf-8"
+    )
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(file_formatter)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter("%(levelname)s - %(message)s")
+    console_handler.setFormatter(console_formatter)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrazyTime v2 Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">CRAZYTIME <span class="version">v2</span></h1>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">CONNECTING</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="clock" id="clock">00:00:00</div>
+            </div>
+            <div class="header-right">
+                <div class="spin-counter">
+                    <span class="counter-label">TOTAL SPINS</span>
+                    <span class="counter-value" id="totalSpins">0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Ticker -->
+        <div class="ticker-container">
+            <div class="ticker-wrapper">
+                <div class="ticker" id="ticker">
+                    <!-- Ticker items will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Current Result Section -->
+            <section class="result-section">
+                <div class="result-card" id="resultCard">
+                    <div class="result-ring">
+                        <svg class="progress-ring" viewBox="0 0 120 120">
+                            <circle class="progress-ring-bg" cx="60" cy="60" r="52"/>
+                            <circle class="progress-ring-fill" cx="60" cy="60" r="52"
+                                    id="progressRing" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+                        </svg>
+                        <div class="result-content">
+                            <span class="result-label">CURRENT RESULT</span>
+                            <span class="result-value" id="currentResult">--</span>
+                            <span class="result-id">#<span id="currentSpinId">0</span></span>
+                        </div>
+                    </div>
+                    <div class="countdown-info">
+                        <div class="countdown-item">
+                            <span class="countdown-label">SPINS WITHOUT PACHINKO</span>
+                            <span class="countdown-value" id="spinsWithoutPachinko">0</span>
+                        </div>
+                        <div class="countdown-item">
+                            <span class="countdown-label">SPINS WITHOUT CRAZYTIME</span>
+                            <span class="countdown-value" id="spinsWithoutCrazyTime">0</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Patterns Grid -->
+            <section class="patterns-section">
+                <div class="patterns-grid" id="patternsGrid">
+                    <!-- Pattern cards will be inserted here -->
+                </div>
+            </section>
+            <!-- Distance History Grid -->
+            <section class="distance-grid-section">
+                <h2 class="section-title">DISTANCE HISTORY <span class="subtitle">LAST 80 OCCURRENCES</span></h2>
+                <div class="distance-tabs">
+                    <button class="distance-tab active" data-pattern="pachinko">PACHINKO</button>
+                    <button class="distance-tab" data-pattern="crazytime">CRAZY TIME</button>
+                </div>
+                <div class="distance-grid-container">
+                    <div class="distance-grid" id="distanceGrid">
+                        <!-- Grid will be rendered here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Heatmap -->
+            <section class="heatmap-section">
+                <h2 class="section-title">HEATMAP <span class="subtitle">LAST 50 SPINS</span></h2>
+                <div class="heatmap-container">
+                    <div class="heatmap" id="heatmap">
+                        <!-- Heatmap cells will be inserted here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bottom Row -->
+            <div class="bottom-row">
+                <!-- Timeline -->
+                <section class="timeline-section">
+                    <h2 class="section-title">TIMELINE <span class="subtitle">RECENT SPINS</span></h2>
+                    <div class="timeline" id="timeline">
+                        <!-- Timeline items will be inserted here -->
+                    </div>
+                </section>
+
+                <!-- Analytics Chart -->
+                <section class="analytics-section">
+                    <h2 class="section-title">DISTRIBUTION <span class="subtitle">HISTOGRAM</span></h2>
+                    <div class="chart-container">
+                        <canvas id="histogramChart"></canvas>
+                    </div>
+                    <div class="analytics-stats" id="analyticsStats">
+                        <!-- Stats will be inserted here -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- Alerts Panel -->
+            <section class="alerts-section">
+                <h2 class="section-title">ALERTS <span class="subtitle">STATUS</span></h2>
+                <div class="alerts-grid" id="alertsGrid">
+                    <!-- Alert items will be inserted here -->
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>CrazyTime v2 Dashboard</span>
+            <span class="separator">|</span>
+            <span id="lastUpdate">Last update: --</span>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/renderer.js"></script>
+    <script src="/static/js/animations.js"></script>
+    <script src="/static/js/ticker.js"></script>
+</body>
+</html>
