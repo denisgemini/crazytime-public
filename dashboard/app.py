@@ -84,7 +84,7 @@ class PatternStats(BaseModel):
     pattern_name: str
     count: int
     mean_distance: Optional[float] = None
-    median_distance: Optional[int] = None
+    median_distance: Optional[float] = None
     min_distance: Optional[int] = None
     max_distance: Optional[int] = None
 
@@ -486,13 +486,19 @@ async def get_patterns():
         print(f"Error patterns: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/alerts", response_model=AlertsResponse)
-async def get_alerts():
-    try:
-        # Si el orquestador no ha creado el archivo de alertas, devolvemos vacio
-        return AlertsResponse(alerts=[], active_count=0)
-    except:
-        return AlertsResponse(alerts=[], active_count=0)
+
+# ============== SPA Fallback ==============
+
+@app.get("/{path:path}", response_class=HTMLResponse)
+async def spa_fallback(request: Request, path: str):
+    """
+    Catch-all route for SPA (Single Page Application).
+    Returns index.html for any non-API path so React/frontend handles routing.
+    """
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request}
+    )
 
 if __name__ == "__main__":
     import uvicorn
