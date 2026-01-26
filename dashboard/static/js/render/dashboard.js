@@ -2,7 +2,6 @@ import { renderHeader } from './header.js';
 import { renderTicker } from './ticker.js';
 import { renderCards } from './cards.js';
 import { renderPatterns } from './patterns.js';
-import { renderHeatmap } from './heatmap.js';
 import { renderTimeline } from './timeline.js';
 import { renderHistogram } from './charts.js';
 
@@ -12,7 +11,6 @@ export function renderDashboard(data) {
     renderTicker(data);
     renderCards(data);
     renderPatterns(data);
-    renderHeatmap(data);
     renderTimeline(data);
     renderHistogram(data);
 

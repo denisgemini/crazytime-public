@@ -286,6 +286,40 @@ async def get_recent_spins(limit: int = Query(default=20, ge=1, le=100)):
             count=len(spins)
         )
 
+@app.get("/api/spins/stats")
+async def get_spins_stats():
+    """Get statistics for the last 1000 spins using WAL for safety"""
+    with get_db_connection() as conn:
+        # Distribución de los últimos 1000 tiros
+        stats_query = conn.execute(
+            """SELECT resultado, COUNT(*) as count
+               FROM (SELECT resultado FROM tiros ORDER BY id DESC LIMIT 1000)
+               GROUP BY resultado"""
+        ).fetchall()
+
+        distribution = {row['resultado']: row['count'] for row in stats_query}
+
+        last_spin = conn.execute(
+            "SELECT id, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+        # Conteo de hoy para el header
+        today = datetime.now().strftime("%Y-%m-%d")
+        today_count = conn.execute(
+            "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
+            (f"{today}%",)
+        ).fetchone()
+
+        return {
+            "today_stats": {
+                "date": today,
+                "total_spins": today_count['count'] if today_count else 0,
+                "results_distribution": distribution
+            },
+            "current_spin_id": last_spin['id'] if last_spin else 0,
+            "last_spin_time": last_spin['timestamp'] if last_spin else None
+        }
+
 @app.get("/api/patterns/{pattern_id}/distances", response_model=PatternDistancesResponse)
 async def get_pattern_distances(pattern_id: str, limit: int = Query(default=50, ge=1, le=200)):
     """Get distance history and statistics for a pattern"""
