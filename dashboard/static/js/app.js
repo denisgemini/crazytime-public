@@ -264,28 +264,14 @@ class CrazyTimeDashboard {
 
         // Update result display
         const resultEl = document.getElementById('currentResult');
-        const spinIdEl = document.getElementById('currentSpinId');
 
         if (resultEl && lastSpin) {
             resultEl.textContent = this.formatResult(lastSpin.resultado);
             resultEl.className = `result-value ${this.getResultClass(lastSpin.resultado)}`;
-            spinIdEl.textContent = lastSpin.id;
         }
 
         // Update counters from patterns
         const pachinko = patterns.find(p => p.pattern_id === 'pachinko');
-        const crazytime = patterns.find(p => p.pattern_id === 'crazytime');
-
-        const pachinkoCounter = document.getElementById('spinsWithoutPachinko');
-        const crazyCounter = document.getElementById('spinsWithoutCrazyTime');
-
-        if (pachinkoCounter && pachinko) {
-            pachinkoCounter.textContent = pachinko.current_distance;
-        }
-
-        if (crazyCounter && crazytime) {
-            crazyCounter.textContent = crazytime.current_distance;
-        }
 
         // Update progress ring (using Pachinko as reference)
         if (pachinko) {
@@ -360,7 +346,7 @@ class CrazyTimeDashboard {
 
         container.innerHTML = spins.map(spin => {
             const resultClass = this.getHeatmapClass(spin.resultado);
-            return `<div class="heatmap-cell ${resultClass}" title="#${spin.id} - ${spin.timestamp}">${this.formatResultShort(spin.resultado)}</div>`;
+            return `<div class="heatmap-cell ${resultClass}" title="${spin.timestamp}">${this.formatResultShort(spin.resultado)}</div>`;
         }).join('');
     }
 
@@ -383,7 +369,6 @@ class CrazyTimeDashboard {
                 <div class="timeline-item" style="animation-delay: ${index * 0.05}s">
                     <span class="timeline-result ${resultClass}">${this.formatResult(spin.resultado)}</span>
                     <span class="timeline-time">${timeStr}</span>
-                    <span class="timeline-id">#${spin.id}</span>
                 </div>
             `;
         }).join('');
