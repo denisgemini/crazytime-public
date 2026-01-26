@@ -95,19 +95,6 @@ export function renderHistogram(data) {
 
     // Actualizar Texto de Estadísticas (AnalyticsStats)
     if (statsEl) {
-        const total = values.reduce((a, b) => a + b, 0);
-        // Mostrar top 3 resultados más frecuentes
-        const sorted = [...categories].sort((a, b) => (distribution[b] || 0) - (distribution[a] || 0));
-        
-        statsEl.innerHTML = `
-            <div class="analytic-stat">
-                <span class="stat-label">MÁS FRECUENTE</span>
-                <span class="stat-value" style="color: ${colors[sorted[0]]}">${sorted[0]} (${distribution[sorted[0]] || 0})</span>
-            </div>
-            <div class="analytic-stat">
-                <span class="stat-label">MENOS FRECUENTE</span>
-                <span class="stat-value" style="color: ${colors[sorted[7]]}">${sorted[7]} (${distribution[sorted[7]] || 0})</span>
-            </div>
-        `;
+        statsEl.innerHTML = '';
     }
 }
