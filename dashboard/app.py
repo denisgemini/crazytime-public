@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 import json
 import sqlite3
+import logging
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,9 +52,12 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # Templates
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Base path configuration for GCP instance
-BASE_DATA_PATH = Path("/home/denis/crazytime_v2/data")
-BASE_CONFIG_PATH = Path("/home/denis/crazytime_v2/config")
+# Project root directory
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Base path configuration
+BASE_DATA_PATH = PROJECT_ROOT / "data"
+BASE_CONFIG_PATH = PROJECT_ROOT / "config"
 
 # Database path
 DB_PATH = BASE_DATA_PATH / "db.sqlite3"
@@ -396,7 +400,7 @@ async def get_alerts():
 @app.get("/api/analytics/window", response_model=AnalyticsResponse)
 async def get_analytics_window():
     """Get window analysis for VIP patterns"""
-    analytics_dir = Path(__file__).parent.parent / "data" / "analytics"
+    analytics_dir = BASE_DATA_PATH / "analytics"
     pattern_config = get_pattern_config()
 
     windows = []
@@ -429,36 +433,40 @@ async def get_analytics_window():
 @app.get("/api/gaps", response_model=GapsResponse)
 async def get_gaps(limit: int = Query(default=20, ge=1, le=100)):
     """Get service gap records"""
-    gaps_file = Path(__file__).parent.parent / "data" / "bitacora_brechas.csv"
-
+    gaps_file = BASE_DATA_PATH / "bitacora_brechas.csv"
     gaps = []
-    if gaps_file.exists():
-        try:
-            with open(gaps_file, 'r') as f:
-                lines = f.readlines()
-                for line in lines[-limit:]:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 4:
-                        gaps.append(GapRecord(
-                            timestamp=parts[0],
-                            duration_seconds=float(parts[1]),
-                            gap_type=parts[2],
-                            details=parts[3] if len(parts) > 3 else ""
-                        ))
-        except Exception:
-            pass
+
+    if not gaps_file.exists():
+        return GapsResponse(gaps=[], count=0)
+
+    try:
+        with open(gaps_file, 'r') as f:
+            lines = f.readlines()
+            for line in lines[-limit:]:
+                parts = line.strip().split(',')
+                if len(parts) < 4:
+                    continue  # Skip malformed lines
+                try:
+                    gaps.append(GapRecord(
+                        timestamp=parts[0],
+                        duration_seconds=float(parts[1]),
+                        gap_type=parts[2],
+                        details=",".join(parts[3:])
+                    ))
+                except (ValueError, IndexError):
+                    continue  # Skip lines with conversion errors
+    except FileNotFoundError:
+        return GapsResponse(gaps=[], count=0)
+    except Exception as e:
+        # Log the error for debugging
+        logging.error(f"Error reading gaps file: {e}")
+        raise HTTPException(status_code=500, detail="Error processing gaps data")
 
     return GapsResponse(
         gaps=gaps[::-1],
         count=len(gaps)
     )
 
-
-# ============== Main Entry Point ==============
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 @app.get("/api/patterns", response_model=PatternsResponse)
 async def get_patterns():
@@ -511,3 +519,10 @@ async def get_patterns():
         patterns=patterns,
         last_updated=datetime.now().isoformat()
     )
+
+
+# ============== Main Entry Point ==============
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

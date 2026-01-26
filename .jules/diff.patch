@@ -1,0 +1,73 @@
+diff --git a/dashboard/static/js/app.js b/dashboard/static/js/app.js
+index 4cc64bb..c3e56b9 100755
+--- a/dashboard/static/js/app.js
++++ b/dashboard/static/js/app.js
+@@ -264,28 +264,14 @@ class CrazyTimeDashboard {
+ 
+         // Update result display
+         const resultEl = document.getElementById('currentResult');
+-        const spinIdEl = document.getElementById('currentSpinId');
+ 
+         if (resultEl && lastSpin) {
+             resultEl.textContent = this.formatResult(lastSpin.resultado);
+             resultEl.className = `result-value ${this.getResultClass(lastSpin.resultado)}`;
+-            spinIdEl.textContent = lastSpin.id;
+         }
+ 
+         // Update counters from patterns
+         const pachinko = patterns.find(p => p.pattern_id === 'pachinko');
+-        const crazytime = patterns.find(p => p.pattern_id === 'crazytime');
+-
+-        const pachinkoCounter = document.getElementById('spinsWithoutPachinko');
+-        const crazyCounter = document.getElementById('spinsWithoutCrazyTime');
+-
+-        if (pachinkoCounter && pachinko) {
+-            pachinkoCounter.textContent = pachinko.current_distance;
+-        }
+-
+-        if (crazyCounter && crazytime) {
+-            crazyCounter.textContent = crazytime.current_distance;
+-        }
+ 
+         // Update progress ring (using Pachinko as reference)
+         if (pachinko) {
+@@ -360,7 +346,7 @@ class CrazyTimeDashboard {
+ 
+         container.innerHTML = spins.map(spin => {
+             const resultClass = this.getHeatmapClass(spin.resultado);
+-            return `<div class="heatmap-cell ${resultClass}" title="#${spin.id} - ${spin.timestamp}">${this.formatResultShort(spin.resultado)}</div>`;
++            return `<div class="heatmap-cell ${resultClass}" title="${spin.timestamp}">${this.formatResultShort(spin.resultado)}</div>`;
+         }).join('');
+     }
+ 
+@@ -383,7 +369,6 @@ class CrazyTimeDashboard {
+                 <div class="timeline-item" style="animation-delay: ${index * 0.05}s">
+                     <span class="timeline-result ${resultClass}">${this.formatResult(spin.resultado)}</span>
+                     <span class="timeline-time">${timeStr}</span>
+-                    <span class="timeline-id">#${spin.id}</span>
+                 </div>
+             `;
+         }).join('');
+diff --git a/dashboard/templates/index.html b/dashboard/templates/index.html
+index 86eaa13..745a206 100755
+--- a/dashboard/templates/index.html
++++ b/dashboard/templates/index.html
+@@ -54,17 +54,6 @@
+                         <div class="result-content">
+                             <span class="result-label">CURRENT RESULT</span>
+                             <span class="result-value" id="currentResult">--</span>
+-                            <span class="result-id">#<span id="currentSpinId">0</span></span>
+-                        </div>
+-                    </div>
+-                    <div class="countdown-info">
+-                        <div class="countdown-item">
+-                            <span class="countdown-label">SPINS WITHOUT PACHINKO</span>
+-                            <span class="countdown-value" id="spinsWithoutPachinko">0</span>
+-                        </div>
+-                        <div class="countdown-item">
+-                            <span class="countdown-label">SPINS WITHOUT CRAZYTIME</span>
+-                            <span class="countdown-value" id="spinsWithoutCrazyTime">0</span>
+                         </div>
+                     </div>
+                 </div>
+
