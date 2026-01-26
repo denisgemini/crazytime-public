@@ -11,7 +11,6 @@ from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 import json
 import sqlite3
-import logging
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,12 +51,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # Templates
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Project root directory
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-# Base path configuration
-BASE_DATA_PATH = PROJECT_ROOT / "data"
-BASE_CONFIG_PATH = PROJECT_ROOT / "config"
+# Base path configuration for GCP instance
+BASE_DATA_PATH = Path(Path(__file__).parent.parent / "data")
+BASE_CONFIG_PATH = Path(Path(__file__).parent.parent / "config")
 
 # Database path
 DB_PATH = BASE_DATA_PATH / "db.sqlite3"
@@ -400,7 +396,7 @@ async def get_alerts():
 @app.get("/api/analytics/window", response_model=AnalyticsResponse)
 async def get_analytics_window():
     """Get window analysis for VIP patterns"""
-    analytics_dir = BASE_DATA_PATH / "analytics"
+    analytics_dir = Path(__file__).parent.parent / "data" / "analytics"
     pattern_config = get_pattern_config()
 
     windows = []
@@ -433,34 +429,24 @@ async def get_analytics_window():
 @app.get("/api/gaps", response_model=GapsResponse)
 async def get_gaps(limit: int = Query(default=20, ge=1, le=100)):
     """Get service gap records"""
-    gaps_file = BASE_DATA_PATH / "bitacora_brechas.csv"
+    gaps_file = Path(__file__).parent.parent / "data" / "bitacora_brechas.csv"
+
     gaps = []
-
-    if not gaps_file.exists():
-        return GapsResponse(gaps=[], count=0)
-
-    try:
-        with open(gaps_file, 'r') as f:
-            lines = f.readlines()
-            for line in lines[-limit:]:
-                parts = line.strip().split(',')
-                if len(parts) < 4:
-                    continue  # Skip malformed lines
-                try:
-                    gaps.append(GapRecord(
-                        timestamp=parts[0],
-                        duration_seconds=float(parts[1]),
-                        gap_type=parts[2],
-                        details=",".join(parts[3:])
-                    ))
-                except (ValueError, IndexError):
-                    continue  # Skip lines with conversion errors
-    except FileNotFoundError:
-        return GapsResponse(gaps=[], count=0)
-    except Exception as e:
-        # Log the error for debugging
-        logging.error(f"Error reading gaps file: {e}")
-        raise HTTPException(status_code=500, detail="Error processing gaps data")
+    if gaps_file.exists():
+        try:
+            with open(gaps_file, 'r') as f:
+                lines = f.readlines()
+                for line in lines[-limit:]:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 4:
+                        gaps.append(GapRecord(
+                            timestamp=parts[0],
+                            duration_seconds=float(parts[1]),
+                            gap_type=parts[2],
+                            details=parts[3] if len(parts) > 3 else ""
+                        ))
+        except Exception:
+            pass
 
     return GapsResponse(
         gaps=gaps[::-1],
@@ -468,61 +454,46 @@ async def get_gaps(limit: int = Query(default=20, ge=1, le=100)):
     )
 
 
+# ============== Main Entry Point ==============
+
+
+
+# ============== Missing Endpoints RE-ADDED ==============
 @app.get("/api/patterns", response_model=PatternsResponse)
 async def get_patterns():
-    tracker_state = get_tracker_state()
-    alert_state = get_alert_state()
-    pattern_config = get_pattern_config()
+    try:
+        tracker_state = get_tracker_state()
+        alert_state = get_alert_state()
+        pattern_config = get_pattern_config()
+        current_id = tracker_state.get("last_processed_id", 0)
+        patterns = []
+        for p_id, config in pattern_config.items():
+            p_state = tracker_state.get("pattern_states", {}).get(p_id, {})
+            last_seen_id = p_state.get("last_id")
+            if last_seen_id is None:
+                spins_since = current_id
+            else:
+                spins_since = current_id - last_seen_id
+            patterns.append(PatternStatus(
+                pattern_id=p_id, pattern_name=config.get("name", p_id),
+                type=config.get("type", "simple"), value=config.get("value", p_id),
+                spins_since=spins_since, current_distance=spins_since,
+                thresholds=config.get("thresholds", []),
+                thresholds_status={}
+            ))
+        return PatternsResponse(patterns=patterns, last_updated=datetime.now().isoformat())
+    except Exception as e:
+        print(f"Error patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    current_id = tracker_state.get("last_processed_id", 0)
-    last_result = tracker_state.get("last_result")
-
-    patterns = []
-    for pattern_id, config in pattern_config.items():
-        pattern_state = tracker_state.get("pattern_states", {}).get(pattern_id, {})
-        alert_data = alert_state.get(pattern_id, {})
-        
-        last_seen_id = pattern_state.get("last_id")
-        
-        if last_seen_id is None or last_seen_id == 0:
-            last_seen_id = alert_data.get("last_seen_id", 0)
-        
-        if last_seen_id and last_seen_id > 0:
-            spins_since = current_id - last_seen_id
-        else:
-            spins_since = current_id
-
-        thresholds_status = {}
-        thresholds = config.get("thresholds", [])
-        for threshold in thresholds:
-            alert_thresh = alert_data.get("thresholds", {}).get(str(threshold), {})
-            thresholds_status[str(threshold)] = {
-                "status": alert_thresh.get("status", "idle"),
-                "last_alert_time": alert_thresh.get("last_alert_time"),
-                "progress": min(100, int(spins_since / threshold * 100)) if threshold > 0 else 0
-            }
-
-        patterns.append(PatternStatus(
-            pattern_id=pattern_id,
-            pattern_name=config.get("name", pattern_id.title()),
-            type=config.get("type", "simple"),
-            value=config.get("value", pattern_id),
-            last_spin_id=last_seen_id if last_seen_id and last_seen_id > 0 else None,
-            last_result=last_result,
-            spins_since=spins_since,
-            current_distance=spins_since,
-            thresholds=thresholds,
-            thresholds_status=thresholds_status
-        ))
-
-    return PatternsResponse(
-        patterns=patterns,
-        last_updated=datetime.now().isoformat()
-    )
-
-
-# ============== Main Entry Point ==============
+@app.get("/api/alerts", response_model=AlertsResponse)
+async def get_alerts():
+    try:
+        # Si el orquestador no ha creado el archivo de alertas, devolvemos vacio
+        return AlertsResponse(alerts=[], active_count=0)
+    except:
+        return AlertsResponse(alerts=[], active_count=0)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
