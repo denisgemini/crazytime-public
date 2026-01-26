@@ -5,8 +5,8 @@ export function renderTicker(data) {
     const spins = data.recent.spins || [];
     ticker.innerHTML = '';
     
-    // Duplicamos los spins para efecto infinito visual si son pocos
-    const displaySpins = [...spins.slice(0, 20), ...spins.slice(0, 20)];
+    // Mostrar solo los últimos 40 resultados únicos, sin duplicar
+    const displaySpins = spins.slice(0, 40);
 
     displaySpins.forEach(s => {
         const item = document.createElement('div');
