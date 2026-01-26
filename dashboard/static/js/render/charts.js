@@ -16,8 +16,8 @@ export function renderHistogram(data) {
     ctx.fillRect(0, 0, width, height);
 
     // Datos a mostrar ordenados
-    const categories = ['1', '2', '5', '10', 'Pachinko', 'CashHunt', 'CoinFlip', 'CrazyTime'];
-    const labels = ['1', '2', '5', '10', 'PK', 'CH', 'CF', 'CT'];
+    const categories = ['1', '2', '5', '10', 'Pachinko', 'CashHunt', 'CoinFlip', 'CrazyTime', '5-2', '2-5'];
+    const labels = ['1', '2', '5', '10', 'PK', 'CH', 'CF', 'CT', '5-2', '2-5'];
     
     const values = categories.map(cat => distribution[cat] || 0);
     const maxValue = Math.max(...values, 10); // Escala mínima de 10
@@ -26,7 +26,7 @@ export function renderHistogram(data) {
     const padding = { top: 30, right: 20, bottom: 30, left: 40 };
     const chartW = width - padding.left - padding.right;
     const chartH = height - padding.top - padding.bottom;
-    const barWidth = (chartW / categories.length) - 10;
+    const barWidth = (chartW / categories.length) - 8;
 
     // Colores por categoría
     const colors = {
@@ -37,7 +37,9 @@ export function renderHistogram(data) {
         'Pachinko': '#d53f8c',
         'CashHunt': '#38a169',
         'CoinFlip': '#e53e3e',
-        'CrazyTime': '#f56565'
+        'CrazyTime': '#f56565',
+        '5-2': '#00d4ff', // Cyan
+        '2-5': '#00ff88'  // Verde
     };
 
     // Dibujar Ejes

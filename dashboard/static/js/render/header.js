@@ -10,10 +10,24 @@ export function renderHeader(data) {
     }
 
     // Indicador LIVE
-    if (statusDot && statusText) {
+    const statusIndicator = document.getElementById('statusIndicator');
+    if (statusIndicator && statusText) {
         const isRunning = data.status.service_running;
-        statusDot.className = 'status-dot ' + (isRunning ? 'status-online' : 'status-offline');
-        statusText.textContent = isRunning ? 'LIVE' : 'OFFLINE';
+        const apiError = data.status.status === 'error';
+
+        // Limpiar clases para evitar conflictos
+        statusIndicator.classList.remove('online', 'offline');
+
+        if (apiError) {
+            statusIndicator.classList.add('offline');
+            statusText.textContent = 'OFFLINE';
+        } else if (isRunning) {
+            statusIndicator.classList.add('online');
+            statusText.textContent = 'LIVE';
+        } else {
+            // Sin clase adicional queda amarillo por defecto
+            statusText.textContent = 'CONNECTING';
+        }
     }
 
     if (totalSpins && data.status.total_spins_today !== undefined) {

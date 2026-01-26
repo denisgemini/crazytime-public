@@ -299,6 +299,17 @@ async def get_spins_stats():
 
         distribution = {row['resultado']: row['count'] for row in stats_query}
 
+        # Incluir conteos de secuencias desde archivos JSON
+        for seq_id in ['seq_5_2', 'seq_2_5']:
+            try:
+                seq_data = get_distances(seq_id)
+                count = seq_data.get("statistics", {}).get("count", 0)
+                # Usar el nombre corto para el gráfico
+                label = "5-2" if seq_id == "seq_5_2" else "2-5"
+                distribution[label] = count
+            except Exception:
+                continue
+
         last_spin = conn.execute(
             "SELECT id, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
         ).fetchone()
