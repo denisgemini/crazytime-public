@@ -24,7 +24,7 @@ export function renderPatterns(data) {
                 <div class="pattern-header">
                     <span class="pattern-name">${name}</span>
                     <span class="pattern-badge ${isHot ? 'hot' : 'cold'}">
-                        ${isHot ? 'LISTO' : 'ESPERANDO'}
+                        ${isHot ? 'READY' : 'WAITING'}
                     </span>
                 </div>
                 <div class="pattern-progress">
@@ -32,12 +32,12 @@ export function renderPatterns(data) {
                         <div class="progress-fill ${isHot ? 'hot' : ''}" style="width: ${progress}%"></div>
                     </div>
                     <div class="progress-stats">
-                        <span>${currentDist} tiros</span>
-                        <span>umbral ${maxThreshold}</span>
+                        <span>${currentDist} spins</span>
+                        <span>${maxThreshold} threshold</span>
                     </div>
                 </div>
                 <div class="pattern-footer-simple">
-                    <span class="t-label">UMBRALES:</span>
+                    <span class="t-label">THRESHOLDS:</span>
                     <span class="t-values">${thresholds.join(' / ')}</span>
                 </div>
             </div>

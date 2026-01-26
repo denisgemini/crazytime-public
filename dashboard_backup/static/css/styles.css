@@ -196,21 +196,12 @@ body {
 
 .ticker {
     display: flex;
-    align-items: center;
-    /* Duración ajustada: 20s total.
-       Pausa inicial simulada por keyframes */
-    animation: ticker-wait-go 20s ease-in-out infinite; 
-    width: max-content;
-    padding-left: 20px; /* Espacio inicial */
+    animation: ticker-scroll 30s linear infinite;
+    padding: 0.75rem 0;
 }
 
 .ticker:hover {
     animation-play-state: paused;
-}
-
-@keyframes ticker-wait-go {
-    0%, 15% { transform: translateX(0); } /* Pausa del 0% al 15% del tiempo */
-    100% { transform: translateX(-100%); } /* Movimiento rápido al final */
 }
 
 .ticker-item {
@@ -971,67 +962,40 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 12px; /* Bordes redondeados */
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* Fuente menos cuadrada */
-    font-size: 1rem;
+    border-radius: 6px;
+    font-family: var(--font-display);
+    font-size: 0.85rem;
     font-weight: 700;
-    background: rgba(0, 0, 0, 0.4); /* Fondo semi-transparente oscuro */
-    border: 2px solid #444; /* Borde base */
-    color: #888;
-    transition: all 0.3s ease;
-    cursor: default;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    color: #000;
+    transition: var(--transition-fast);
+    cursor: pointer;
 }
 
 .distance-cell:hover {
     transform: scale(1.1);
-    z-index: 10;
+    box-shadow: 0 0 20px currentColor;
 }
 
-/* --- CLASES DE RANGO NEÓN (Pachinko) --- */
-
-/* 0 - 60: Gris/Neutro */
-.distance-cell.dist-cold {
-    border-color: #718096;
-    color: #a0aec0;
-    box-shadow: 0 0 2px #718096;
+/* Color scale for distance values */
+.distance-cell.low {
+    background: #4a5568;
+    color: #cbd5e0;
 }
 
-/* 61 - 90: VERDE (Ventana) */
-.distance-cell.dist-window {
-    border-color: #00ff88;
-    color: #00ff88;
-    box-shadow: 0 0 8px #00ff88, inset 0 0 5px rgba(0, 255, 136, 0.1);
-    text-shadow: 0 0 5px #00ff88;
+.distance-cell.medium {
+    background: #ed8936;
+    color: #000;
 }
 
-/* 91 - 150: Amarillo */
-.distance-cell.dist-warm {
-    border-color: #ecc94b;
-    color: #ecc94b;
-    box-shadow: 0 0 5px #ecc94b;
+.distance-cell.high {
+    background: #f56565;
+    color: #fff;
 }
 
-/* 151 - 200: Rojo/Naranja */
-.distance-cell.dist-hot {
-    border-color: #f56565;
-    color: #f56565;
-    box-shadow: 0 0 8px #f56565;
-}
-
-/* 201+: AZUL (Extreme) */
-.distance-cell.dist-extreme {
-    border-color: #00d4ff;
-    color: #00d4ff;
-    box-shadow: 0 0 12px #00d4ff, inset 0 0 8px rgba(0, 212, 255, 0.2);
-    text-shadow: 0 0 8px #00d4ff;
-    animation: pulse-border 2s infinite;
-}
-
-@keyframes pulse-border {
-    0% { box-shadow: 0 0 10px #00d4ff; }
-    50% { box-shadow: 0 0 20px #00d4ff; }
-    100% { box-shadow: 0 0 10px #00d4ff; }
+.distance-cell.very-high {
+    background: #c53030;
+    color: #fff;
+    animation: pulse-glow 2s infinite;
 }
 
  @keyframes pulse-glow {

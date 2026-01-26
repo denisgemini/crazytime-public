@@ -1,5 +1,5 @@
 """
-Dashboard Backend - FastAPI Server for CrazyTime v2 Dashboard
+Dashboard Backend - FastAPI Server for CrazyTime v2 Dashboard (CLEAN)
 Provides REST API endpoints for the interactive dashboard
 """
 
@@ -26,6 +26,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent
 
+# Base path configuration
+BASE_DATA_PATH = Path(BASE_DIR.parent / "data")
+BASE_CONFIG_PATH = Path(BASE_DIR.parent / "config")
+
+# Database and state paths
+DB_PATH = BASE_DATA_PATH / "db.sqlite3"
+TRACKER_STATE_PATH = BASE_DATA_PATH / ".tracker_state.json"
+ALERT_STATE_PATH = BASE_DATA_PATH / ".alert_state.json"
+DISTANCES_DIR = BASE_DATA_PATH / "distances"
+
 # --------------------------------------------------
 # FastAPI app
 # --------------------------------------------------
@@ -51,18 +61,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # Templates
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Base path configuration for GCP instance
-BASE_DATA_PATH = Path(Path(__file__).parent.parent / "data")
-BASE_CONFIG_PATH = Path(Path(__file__).parent.parent / "config")
-
-# Database path
-DB_PATH = BASE_DATA_PATH / "db.sqlite3"
-TRACKER_STATE_PATH = BASE_DATA_PATH / ".tracker_state.json"
-ALERT_STATE_PATH = BASE_DATA_PATH / ".alert_state.json"
-DISTANCES_DIR = BASE_DATA_PATH / "distances"
-
-
-# ============== Pydantic Models ==============
+# ============== Pydantic Models ============== 
 
 class SpinResult(BaseModel):
     id: int
@@ -73,11 +72,9 @@ class SpinResult(BaseModel):
     is_top_slot_matched: Optional[bool] = None
     bonus_multiplier: Optional[int] = None
 
-
 class RecentSpinsResponse(BaseModel):
     spins: List[SpinResult]
     count: int
-
 
 class PatternStats(BaseModel):
     pattern_id: str
@@ -88,13 +85,11 @@ class PatternStats(BaseModel):
     min_distance: Optional[int] = None
     max_distance: Optional[int] = None
 
-
 class PatternDistancesResponse(BaseModel):
     pattern_id: str
     pattern_name: str
     distances: List[int]
     statistics: PatternStats
-
 
 class PatternStatus(BaseModel):
     pattern_id: str
@@ -108,11 +103,9 @@ class PatternStatus(BaseModel):
     thresholds: List[int]
     thresholds_status: Dict[str, Dict[str, Any]]
 
-
 class PatternsResponse(BaseModel):
     patterns: List[PatternStatus]
     last_updated: str
-
 
 class AlertStatus(BaseModel):
     pattern_id: str
@@ -122,53 +115,9 @@ class AlertStatus(BaseModel):
     status: str
     last_alert_time: Optional[str] = None
 
-
 class AlertsResponse(BaseModel):
     alerts: List[AlertStatus]
     active_count: int
-
-
-class AnalyticsWindow(BaseModel):
-    pattern_id: str
-    pattern_name: str
-    threshold: int
-    window_start_offset: int
-    window_end_offset: int
-    total_opportunities: int
-    hits_in_window: int
-    misses: int
-    hit_rate: float
-    roi: float
-
-
-class AnalyticsResponse(BaseModel):
-    windows: List[AnalyticsWindow]
-    last_updated: str
-
-
-class DailyStats(BaseModel):
-    date: str
-    total_spins: int
-    results_distribution: Dict[str, int]
-
-
-class SpinsStatsResponse(BaseModel):
-    today_stats: DailyStats
-    current_spin_id: int
-    last_spin_time: Optional[str] = None
-
-
-class GapRecord(BaseModel):
-    timestamp: str
-    duration_seconds: float
-    gap_type: str
-    details: str
-
-
-class GapsResponse(BaseModel):
-    gaps: List[GapRecord]
-    count: int
-
 
 class StatusResponse(BaseModel):
     status: str
@@ -180,12 +129,10 @@ class StatusResponse(BaseModel):
     uptime_seconds: Optional[int] = None
     timestamp: str
 
-
-# ============== Database Helpers ==============
+# ============== Database Helpers ============== 
 
 @contextmanager
 def get_db_connection(read_only: bool = True):
-    """Get database connection with proper settings"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     try:
@@ -193,27 +140,21 @@ def get_db_connection(read_only: bool = True):
     finally:
         conn.close()
 
-
 def get_tracker_state() -> dict:
-    """Load tracker state from JSON file"""
     try:
         with open(TRACKER_STATE_PATH, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"last_processed_id": 0, "pattern_states": {}}
 
-
 def get_alert_state() -> dict:
-    """Load alert state from JSON file"""
     try:
         with open(ALERT_STATE_PATH, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
         return {}
 
-
 def get_distances(pattern_id: str) -> dict:
-    """Get distances data for a pattern"""
     filepath = DISTANCES_DIR / f"{pattern_id}.json"
     try:
         with open(filepath, 'r') as f:
@@ -221,111 +162,129 @@ def get_distances(pattern_id: str) -> dict:
     except FileNotFoundError:
         return {"distances": [], "statistics": {}}
 
-
 def get_pattern_config() -> dict:
-    """Get pattern definitions from config"""
-    config_path = BASE_CONFIG_PATH / "patterns.py"
+    """Get pattern definitions importing directly from config module"""
     try:
-        with open(config_path, 'r') as f:
-            content = f.read()
+        # Importar dinámicamente el módulo de configuración
+        import sys
+        if str(BASE_CONFIG_PATH.parent) not in sys.path:
+            sys.path.insert(0, str(BASE_CONFIG_PATH.parent))
+            
+        from config.patterns import ALL_PATTERNS
+        
         patterns = {}
-        for line in content.split('\n'):
-            if '"pachinko"' in line or '"crazytime"' in line:
-                patterns[line.split(':')[0].strip().strip('"')] = {
-                    'name': line.split(':')[0].strip().strip('"').replace('_', ' ').title(),
-                    'type': 'simple',
-                    'value': line.split(':')[0].strip().strip('"'),
-                    'thresholds': [50, 110] if 'pachinko' in line else [190, 250]
+        for p in ALL_PATTERNS:
+            # Solo nos interesan Pachinko y CrazyTime para el dashboard principal por ahora
+            if p.id in ['pachinko', 'crazytime']:
+                patterns[p.id] = {
+                    'name': p.name,
+                    'type': p.type,
+                    'value': p.value,
+                    'thresholds': p.thresholds
                 }
         return patterns
-    except FileNotFoundError:
+    except ImportError as e:
+        print(f"Error importing config: {e}")
+        # Fallback manual seguro
         return {
             "pachinko": {"name": "Pachinko", "type": "simple", "value": "Pachinko", "thresholds": [50, 110]},
             "crazytime": {"name": "Crazy Time", "type": "simple", "value": "CrazyTime", "thresholds": [190, 250]}
         }
 
-
-# ============== API Endpoints ==============
+# ============== API Endpoints ============== 
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Serve the main dashboard HTML page"""
     return templates.TemplateResponse("index.html", {"request": request})
-
 
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status():
-    """Get overall system status"""
-    with get_db_connection() as conn:
-        last_spin = conn.execute(
-            "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+    print("➡️ Solicitud recibida: /api/status")
+    try:
+        with get_db_connection() as conn:
+            print("   DB conectada")
+            last_spin = conn.execute(
+                "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            print(f"   Last spin raw: {last_spin}")
 
-        today = datetime.now().strftime("%Y-%m-%d")
-        today_stats = conn.execute(
-            "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
-            (f"{today}%",)
-        ).fetchone()
+            today = datetime.now().strftime("%Y-%m-%d")
+            today_stats = conn.execute(
+                "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
+                (f"{today}%",)
+            ).fetchone()
+            
+            current_id = last_spin['id'] if last_spin else 0
+            print(f"   Current ID: {current_id}")
 
-        current_id = last_spin['id'] if last_spin else 0
+            return StatusResponse(
+                status="running" if current_id > 0 else "stopped",
+                service_running=current_id > 0,
+                last_spin_id=current_id,
+                last_result=last_spin['resultado'] if last_spin else None,
+                last_spin_time=last_spin['timestamp'] if last_spin else None,
+                total_spins_today=today_stats['count'] if today_stats else 0,
+                timestamp=datetime.now().isoformat()
+            )
+    except Exception as e:
+        print(f"❌ ERROR en get_status: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-        return StatusResponse(
-            status="running" if current_id > 0 else "stopped",
-            service_running=current_id > 0,
-            last_spin_id=current_id,
-            last_result=last_spin['resultado'] if last_spin else None,
-            last_spin_time=last_spin['timestamp'] if last_spin else None,
-            total_spins_today=today_stats['count'] if today_stats else 0,
-            timestamp=datetime.now().isoformat()
-        )
+@app.get("/api/patterns", response_model=PatternsResponse)
+async def get_patterns():
+    tracker_state = get_tracker_state()
+    pattern_config = get_pattern_config()
+    current_id = tracker_state.get("last_processed_id", 0)
+    patterns = []
+    for p_id, config in pattern_config.items():
+        p_state = tracker_state.get("pattern_states", {}).get(p_id, {})
+        last_seen_id = p_state.get("last_id")
+        spins_since = current_id - last_seen_id if last_seen_id is not None else current_id
+        patterns.append(PatternStatus(
+            pattern_id=p_id, pattern_name=config.get("name", p_id),
+            type=config.get("type", "simple"), value=config.get("value", p_id),
+            spins_since=spins_since, current_distance=spins_since,
+            thresholds=config.get("thresholds", []),
+            thresholds_status={}
+        ))
+    return PatternsResponse(patterns=patterns, last_updated=datetime.now().isoformat())
 
+@app.get("/api/alerts", response_model=AlertsResponse)
+async def get_alerts():
+    alert_state = get_alert_state()
+    tracker_state = get_tracker_state()
+    pattern_config = get_pattern_config()
+    current_id = tracker_state.get("last_processed_id", 0)
+    alerts = []
+    active_count = 0
+    for p_id, config in pattern_config.items():
+        p_alerts = alert_state.get(p_id, {})
+        for threshold in config.get("thresholds", []):
+            thresh_data = p_alerts.get("thresholds", {}).get(str(threshold), {})
+            status = thresh_data.get("status", "idle")
+            if status in ["approaching", "ready"]:
+                active_count += 1
+            last_seen_id = tracker_state.get("pattern_states", {}).get(p_id, {}).get("last_id", 0)
+            alerts.append(AlertStatus(
+                pattern_id=p_id, pattern_name=config.get("name", p_id),
+                threshold=threshold, current_wait=current_id - last_seen_id,
+                status=status, last_alert_time=thresh_data.get("last_alert_time")
+            ))
+    return AlertsResponse(alerts=alerts, active_count=active_count)
 
 @app.get("/api/spins/recent", response_model=RecentSpinsResponse)
 async def get_recent_spins(limit: int = Query(default=20, ge=1, le=100)):
-    """Get recent spins"""
     with get_db_connection() as conn:
         spins = conn.execute(
-            """SELECT id, resultado, timestamp, top_slot_result,
-                      top_slot_multiplier, is_top_slot_matched, bonus_multiplier
-               FROM tiros ORDER BY id DESC LIMIT ?""",
+            "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT ?",
             (limit,)
         ).fetchall()
-
         return RecentSpinsResponse(
-            spins=[SpinResult(**dict(row)) for row in spins],
+            spins=[SpinResult(id=r['id'], resultado=r['resultado'], timestamp=r['timestamp']) for r in spins],
             count=len(spins)
         )
-
-
-@app.get("/api/spins/stats", response_model=SpinsStatsResponse)
-async def get_spins_stats():
-    """Get daily statistics"""
-    with get_db_connection() as conn:
-        today = datetime.now().strftime("%Y-%m-%d")
-
-        today_stats = conn.execute(
-            """SELECT resultado, COUNT(*) as count
-               FROM tiros WHERE timestamp LIKE ?
-               GROUP BY resultado""",
-            (f"{today}%",)
-        ).fetchall()
-
-        distribution = {row['resultado']: row['count'] for row in today_stats}
-
-        last_spin = conn.execute(
-            "SELECT id, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-
-        return SpinsStatsResponse(
-            today_stats=DailyStats(
-                date=today,
-                total_spins=sum(distribution.values()),
-                results_distribution=distribution
-            ),
-            current_spin_id=last_spin['id'] if last_spin else 0,
-            last_spin_time=last_spin['timestamp'] if last_spin else None
-        )
-
 
 @app.get("/api/patterns/{pattern_id}/distances", response_model=PatternDistancesResponse)
 async def get_pattern_distances(pattern_id: str, limit: int = Query(default=50, ge=1, le=200)):
@@ -352,154 +311,10 @@ async def get_pattern_distances(pattern_id: str, limit: int = Query(default=50, 
     )
 
 
-@app.get("/api/alerts", response_model=AlertsResponse)
-async def get_alerts():
-    """Get current alert status"""
-    alert_state = get_alert_state()
-    tracker_state = get_tracker_state()
-    pattern_config = get_pattern_config()
-
-    current_id = tracker_state.get("last_processed_id", 0)
-
-    alerts = []
-    active_count = 0
-
-    for pattern_id, config in pattern_config.items():
-        pattern_alerts = alert_state.get(pattern_id, {})
-        thresholds = config.get("thresholds", [])
-
-        for threshold in thresholds:
-            thresh_data = pattern_alerts.get("thresholds", {}).get(str(threshold), {})
-            status = thresh_data.get("status", "idle")
-
-            if status in ["approaching", "ready"]:
-                active_count += 1
-
-            last_seen_id = tracker_state.get("pattern_states", {}).get(pattern_id, {}).get("last_id", 0)
-            current_wait = current_id - last_seen_id
-
-            alerts.append(AlertStatus(
-                pattern_id=pattern_id,
-                pattern_name=config.get("name", pattern_id.title()),
-                threshold=threshold,
-                current_wait=current_wait,
-                status=status,
-                last_alert_time=thresh_data.get("last_alert_time")
-            ))
-
-    return AlertsResponse(
-        alerts=alerts,
-        active_count=active_count
-    )
-
-
-@app.get("/api/analytics/window", response_model=AnalyticsResponse)
-async def get_analytics_window():
-    """Get window analysis for VIP patterns"""
-    analytics_dir = Path(__file__).parent.parent / "data" / "analytics"
-    pattern_config = get_pattern_config()
-
-    windows = []
-
-    for pattern_id in pattern_config.keys():
-        filepath = analytics_dir / f"{pattern_id}_window_analysis.json"
-        if filepath.exists():
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-                for result in data.get("results", []):
-                    windows.append(AnalyticsWindow(
-                        pattern_id=pattern_id,
-                        pattern_name=pattern_config[pattern_id].get("name", pattern_id.title()),
-                        threshold=result.get("threshold", 0),
-                        window_start_offset=result.get("window_start_offset", 0),
-                        window_end_offset=result.get("window_end_offset", 0),
-                        total_opportunities=result.get("total_opportunities", 0),
-                        hits_in_window=result.get("hits_in_window", 0),
-                        misses=result.get("misses", 0),
-                        hit_rate=result.get("hit_rate", 0),
-                        roi=result.get("roi", 0)
-                    ))
-
-    return AnalyticsResponse(
-        windows=windows,
-        last_updated=datetime.now().isoformat()
-    )
-
-
-@app.get("/api/gaps", response_model=GapsResponse)
-async def get_gaps(limit: int = Query(default=20, ge=1, le=100)):
-    """Get service gap records"""
-    gaps_file = Path(__file__).parent.parent / "data" / "bitacora_brechas.csv"
-
-    gaps = []
-    if gaps_file.exists():
-        try:
-            with open(gaps_file, 'r') as f:
-                lines = f.readlines()
-                for line in lines[-limit:]:
-                    parts = line.strip().split(',')
-                    if len(parts) >= 4:
-                        gaps.append(GapRecord(
-                            timestamp=parts[0],
-                            duration_seconds=float(parts[1]),
-                            gap_type=parts[2],
-                            details=parts[3] if len(parts) > 3 else ""
-                        ))
-        except Exception:
-            pass
-
-    return GapsResponse(
-        gaps=gaps[::-1],
-        count=len(gaps)
-    )
-
-
-# ============== Main Entry Point ==============
-
-
-
-# ============== Missing Endpoints RE-ADDED ==============
-@app.get("/api/patterns", response_model=PatternsResponse)
-async def get_patterns():
-    try:
-        tracker_state = get_tracker_state()
-        alert_state = get_alert_state()
-        pattern_config = get_pattern_config()
-        current_id = tracker_state.get("last_processed_id", 0)
-        patterns = []
-        for p_id, config in pattern_config.items():
-            p_state = tracker_state.get("pattern_states", {}).get(p_id, {})
-            last_seen_id = p_state.get("last_id")
-            if last_seen_id is None:
-                spins_since = current_id
-            else:
-                spins_since = current_id - last_seen_id
-            patterns.append(PatternStatus(
-                pattern_id=p_id, pattern_name=config.get("name", p_id),
-                type=config.get("type", "simple"), value=config.get("value", p_id),
-                spins_since=spins_since, current_distance=spins_since,
-                thresholds=config.get("thresholds", []),
-                thresholds_status={}
-            ))
-        return PatternsResponse(patterns=patterns, last_updated=datetime.now().isoformat())
-    except Exception as e:
-        print(f"Error patterns: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============== SPA Fallback ==============
-
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_fallback(request: Request, path: str):
-    """
-    Catch-all route for SPA (Single Page Application).
-    Returns index.html for any non-API path so React/frontend handles routing.
-    """
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request}
-    )
+    return templates.TemplateResponse("index.html", {"request": request})
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

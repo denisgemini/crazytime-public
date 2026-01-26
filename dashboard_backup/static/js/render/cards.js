@@ -20,21 +20,13 @@ export function renderCards(data) {
     if (pPattern && pachinkoVal) pachinkoVal.textContent = pPattern.spins_since;
     if (cPattern && crazyVal) crazyVal.textContent = cPattern.spins_since;
 
-    // Anillo de progreso basado EXCLUSIVAMENTE en Crazy Time (Umbral 190)
-    if (ring && cPattern) {
-        const threshold = 190;
-        const progress = Math.min(cPattern.spins_since / threshold, 1);
+    // Anillo de progreso basado en el patrón más cercano al threshold
+    if (ring && pPattern && cPattern) {
+        const pProg = pPattern.spins_since / 110; 
+        const cProg = cPattern.spins_since / 250;
+        const progress = Math.min(Math.max(pProg, cProg), 1);
         
         const circumference = 326.7; // 2 * PI * 52 aprox
         ring.style.strokeDashoffset = circumference * (1 - progress);
-        
-        // Cambio de color opcional: Rojo si supera el umbral
-        if (cPattern.spins_since >= threshold) {
-            ring.style.stroke = "#f56565"; // Rojo
-            ring.style.filter = "drop-shadow(0 0 8px #f56565)";
-        } else {
-            ring.style.stroke = "#00ff88"; // Verde neón original
-            ring.style.filter = "drop-shadow(0 0 5px #00ff88)";
-        }
     }
 }
