@@ -11,12 +11,15 @@
     *   Filtro de duplicados de ±10s activo y funcional.
 *   **Notificaciones:** Bot de Telegram configurado y probado (envía mensaje de inicio).
 
-## 2. Tareas en Progreso (Prueba de Hoy)
-*   **Resumen Diario Pro:** Creación de un script que genere el reporte diario desde este directorio.
-    *   **Lógica de Apuesta:** Conteo de HITS/MISSES (Espera 11 tiros / Ventana 30 tiros) para umbrales VIP.
-    *   **Salud Visual:** Gráfico de latidos (0-4s, 5s, 6-11s, >11s, Negativos).
-    *   **Exportación:** Generación de CSV con tiros del día para reconstrucción de BD.
-*   **Sincronización:** Telegram como puente para envío y descarga manual de datos para prueba.
+## 2. Tareas en Progreso (Próxima Sesión)
+*   **Script: `scripts/generar_resumen.py`**
+    *   **Lógica "Espera 11 / Apuesta 30"**: Algoritmo para contar HITS/MISSES basados en umbrales VIP.
+    *   **Gráfico de Salud**: Generación de `salud_latidos.png` con `matplotlib` (Rangos: <0, 0-4s, 5s, 6-11s, >11s).
+    *   **Exportación de Datos**: Generación de `tiros_hoy.csv` con historial completo (ID, Resultado, Inicio, Fin, Latido).
+    *   **Envío Telegram**: Mensaje (Estadísticas) + Imagen (Salud) + Documento (CSV).
+*   **Script: `scripts/descargar_datos.py`**
+    *   Uso de `python-telegram-bot` para descargar el último CSV del bot.
+    *   Inyección de datos del CSV a la base de datos local para sincronización manual de prueba.
 
 ## 3. Comandos de Interés
 ```bash
@@ -24,6 +27,8 @@
 python3 scripts/analyze_latidos.py
 # Probar notificador
 ./venv/bin/python3 scripts/test_telegram.py
+# Subir cambios (Git)
+git add . && git commit -m "Desc..." && git push origin master
 ```
 
 ## 3. Mapa de Archivos Clave

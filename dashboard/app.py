@@ -204,13 +204,13 @@ async def get_status():
         with get_db_connection() as conn:
             print("   DB conectada")
             last_spin = conn.execute(
-                "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
+                "SELECT pseudo_id as id, resultado, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1"
             ).fetchone()
             print(f"   Last spin raw: {last_spin}")
 
             today = datetime.now().strftime("%Y-%m-%d")
             today_stats = conn.execute(
-                "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
+                "SELECT COUNT(*) as count FROM tiros_ordenados WHERE timestamp LIKE ?",
                 (f"{today}%",)
             ).fetchone()
             
@@ -278,7 +278,7 @@ async def get_alerts():
 async def get_recent_spins(limit: int = Query(default=20, ge=1, le=100)):
     with get_db_connection() as conn:
         spins = conn.execute(
-            "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT ?",
+            "SELECT pseudo_id as id, resultado, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT ?",
             (limit,)
         ).fetchall()
         return RecentSpinsResponse(
@@ -293,7 +293,7 @@ async def get_spins_stats():
         # Distribución de los últimos 1000 tiros
         stats_query = conn.execute(
             """SELECT resultado, COUNT(*) as count
-               FROM (SELECT resultado FROM tiros ORDER BY id DESC LIMIT 1000)
+               FROM (SELECT resultado FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1000)
                GROUP BY resultado"""
         ).fetchall()
 
@@ -311,13 +311,13 @@ async def get_spins_stats():
                 continue
 
         last_spin = conn.execute(
-            "SELECT id, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
+            "SELECT pseudo_id as id, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1"
         ).fetchone()
 
         # Conteo de hoy para el header
         today = datetime.now().strftime("%Y-%m-%d")
         today_count = conn.execute(
-            "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
+            "SELECT COUNT(*) as count FROM tiros_ordenados WHERE timestamp LIKE ?",
             (f"{today}%",)
         ).fetchone()
 

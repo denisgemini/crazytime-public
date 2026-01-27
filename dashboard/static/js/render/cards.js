@@ -28,10 +28,10 @@ export function renderCards(data) {
         const circumference = 326.7; // 2 * PI * 52 aprox
         ring.style.strokeDashoffset = circumference * (1 - progress);
         
-        // Cambio de color opcional: Rojo si supera el umbral
+        // Cambio de color: Azul celeste neón si supera el umbral (¡A jugar!)
         if (cPattern.spins_since >= threshold) {
-            ring.style.stroke = "#f56565"; // Rojo
-            ring.style.filter = "drop-shadow(0 0 8px #f56565)";
+            ring.style.stroke = "#00f2ff"; // Azul celeste neón
+            ring.style.filter = "drop-shadow(0 0 12px #00f2ff)";
         } else {
             ring.style.stroke = "#00ff88"; // Verde neón original
             ring.style.filter = "drop-shadow(0 0 5px #00ff88)";

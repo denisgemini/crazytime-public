@@ -51,6 +51,16 @@ class Database:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON tiros(timestamp)")
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_timestamp_unique ON tiros(timestamp)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_resultado_timestamp ON tiros(resultado, timestamp)")
+        
+        # FASE 2: Vista de Pseudo IDs Cronológicos
+        cur.execute("""
+            CREATE VIEW IF NOT EXISTS tiros_ordenados AS
+            SELECT 
+                ROW_NUMBER() OVER (ORDER BY timestamp ASC) AS pseudo_id,
+                *
+            FROM tiros
+        """)
+        
         conn.commit()
 
     def _verify_integrity(self):
@@ -114,27 +124,37 @@ class Database:
                     if not current_start or not current_end:
                         continue
 
-                    # 1. Filtro de duplicados (±10s sobre inicio real)
+                    # 1. Filtro de duplicados (±10s sobre inicio real) - Buscando de nuevo a viejo
                     cur.execute("""
-                        SELECT 1 FROM tiros 
+                        SELECT id, timestamp FROM tiros 
                         WHERE resultado = ? 
                         AND datetime(timestamp) BETWEEN datetime(?, '-10 seconds') AND datetime(?, '+10 seconds')
+                        ORDER BY id DESC LIMIT 1
                     """, (current_resultado, current_start, current_start))
                     
-                    if cur.fetchone():
+                    collision = cur.fetchone()
+                    if collision:
+                        # Solo avisar si hay una anomalía (tiempos diferentes pero en rango 10s)
+                        if collision['timestamp'] != current_start:
+                            logger.warning(f"⚠️ ANOMALÍA [Filtro 10s]: {current_resultado} ({current_start}) choca con ID #{collision['id']} ({collision['timestamp']})")
                         continue
 
-                    # 2. Calcular Latido (Inicio Actual - Fin Anterior)
-                    cur.execute("SELECT settled_at FROM tiros ORDER BY id DESC LIMIT 1")
+                    # 2. Calcular Latido Real (Inicio Actual - Fin del Vecino Cronológico Anterior)
+                    cur.execute("""
+                        SELECT id, settled_at FROM tiros 
+                        WHERE timestamp < ? 
+                        ORDER BY timestamp DESC LIMIT 1
+                    """, (current_start,))
                     last_row = cur.fetchone()
                     
                     latido = 0
-                    if last_row and last_row[0]:
+                    if last_row and last_row['settled_at']:
                         try:
-                            t_prev_end = datetime.fromisoformat(last_row[0])
+                            t_prev_end = datetime.fromisoformat(last_row['settled_at'])
                             t_curr_start = datetime.fromisoformat(current_start)
                             latido = int((t_curr_start - t_prev_end).total_seconds())
-                        except Exception:
+                        except Exception as e:
+                            logger.error(f"❌ Error calculando latido para {current_resultado} ({current_start}): {e}")
                             latido = 0
 
                     # 3. Insertar con nuevo modelo
