@@ -12,6 +12,13 @@ from typing import Optional
 from config.patterns import Pattern, VIP_PATTERNS, WINDOW_CONFIG, get_window_range
 from core.database import Database
 
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -151,9 +158,11 @@ class WindowAnalyzer:
         logger.info(f"📄 Reporte consolidado: {filepath}")
 
     def _generate_excel_report(self, pattern: Pattern, results: dict, occurrences: list[dict]):
+        if not HAS_OPENPYXL:
+            logger.warning("⚠️ openpyxl no instalado, omitiendo Excel")
+            return
+            
         try:
-            from openpyxl import Workbook
-            from openpyxl.styles import Font, PatternFill
             wb = Workbook()
             ws_summary = wb.active
             ws_summary.title = "Resumen"

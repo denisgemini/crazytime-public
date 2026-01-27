@@ -3,24 +3,28 @@
 **Estado:** Estable / Funcional / Limpio
 
 ## 1. Estado Actual del Sistema
-El dashboard ha sido reconstruido y limpiado de código duplicado. Actualmente funciona bajo una arquitectura **FastAPI + Vanilla JS Modular**.
+*   **Arquitectura:** FastAPI + Vanilla JS Modular.
+*   **Modelo de Datos:** Implementado el **"Nuevo Modelo de Latidos"**.
+    *   `timestamp` guarda el inicio real (`started_at`).
+    *   `settled_at` guarda el fin del tiro.
+    *   `latido` (Inicio actual - Fin anterior) grabado en BD.
+    *   Filtro de duplicados de ±10s activo y funcional.
+*   **Notificaciones:** Bot de Telegram configurado y probado (envía mensaje de inicio).
 
-### Arquitectura
-*   **Backend:** `dashboard/app.py` (FastAPI) corriendo en puerto **8000**.
-*   **Frontend:** `dashboard/templates/index.html` (SPA simple).
-*   **Lógica JS:** Modular en `dashboard/static/js/` (entrada vía `main.js`).
-*   **Base de Datos:** SQLite en modo **WAL** (`data/db.sqlite3`).
-*   **Datos en vivo:** Se leen los últimos 1000 tiros para estadísticas.
+## 2. Tareas en Progreso (Prueba de Hoy)
+*   **Resumen Diario Pro:** Creación de un script que genere el reporte diario desde este directorio.
+    *   **Lógica de Apuesta:** Conteo de HITS/MISSES (Espera 11 tiros / Ventana 30 tiros) para umbrales VIP.
+    *   **Salud Visual:** Gráfico de latidos (0-4s, 5s, 6-11s, >11s, Negativos).
+    *   **Exportación:** Generación de CSV con tiros del día para reconstrucción de BD.
+*   **Sincronización:** Telegram como puente para envío y descarga manual de datos para prueba.
 
-## 2. Cambios Recientes (La "Gran Limpieza")
-*   🗑️ **Archivos Eliminados:** `app.js`, `renderer.js`, `heatmap.js` (causaban duplicidad).
-*   🔧 **API Fix:** Se corrigió la lectura de `config/patterns.py` que devolvía texto crudo ("Id=...") en lugar de objetos JSON.
-*   🎨 **UI Refactor:**
-    *   **Ticker:** Estilo "Billetes de Neón" (1, 2, 5, 10) y Badges verticales para Bonos. Muestra los últimos 40 únicos.
-    *   **Distance Grid:** Movido arriba. Celdas con bordes neón y colores por temperatura (Frío -> Caliente -> Extreme). Invertido para mostrar lo más reciente primero.
-    *   **Heatmap:** Eliminado por inutilidad.
-    *   **Distribution Chart:** Reemplazado por un histograma de los últimos 1000 resultados (Barras de neón).
-    *   **Ring:** Ahora solo muestra el progreso al umbral 190 de Crazy Time.
+## 3. Comandos de Interés
+```bash
+# Ver latidos actuales
+python3 scripts/analyze_latidos.py
+# Probar notificador
+./venv/bin/python3 scripts/test_telegram.py
+```
 
 ## 3. Mapa de Archivos Clave
 Si necesitas editar algo, ve directo aquí:
