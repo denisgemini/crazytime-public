@@ -19,7 +19,6 @@ class PatternOccurrence:
     spin_id: int
     timestamp: str
     distance_from_previous: Optional[int]
-    gap_seconds: Optional[float] = None  # CAMBIO 3: Campo para gap
     details: dict = None
 
     def __post_init__(self):
@@ -117,27 +116,10 @@ class PatternTracker:
         else:
             distance = None
 
-        # CAMBIO 4: Calcular gap_seconds (heartbeat con tiro consecutivo)
-        gap_seconds = None
-        if spin_id > 1:
-            prev_consecutive_spin = self.db.get_spin_by_id(spin_id - 1)
-            if prev_consecutive_spin and spin.get("started_at"):
-                try:
-                    current_start = datetime.fromisoformat(spin["started_at"])
-                    prev_ts = datetime.fromisoformat(prev_consecutive_spin["timestamp"])
-                    gap_seconds = (current_start - prev_ts).total_seconds()
-
-                    # CAMBIO 10: Logging de gaps anómalos
-                    if abs(gap_seconds - 5.0) > 6.0:
-                        logger.warning(f"⚠️ [{pattern.name}] GAP ANÓMALO: {gap_seconds:.1f}s entre ID {spin_id-1} y {spin_id}")
-                except Exception as e:
-                    logger.debug(f"No se pudo calcular gap: {e}")
-
         occurrence = PatternOccurrence(
             spin_id=spin_id,
             timestamp=spin["timestamp"],
             distance_from_previous=distance,
-            gap_seconds=gap_seconds,  # CAMBIO 4: Guardar gap
             details=self._extract_details(pattern, spin)
         )
         self._save_occurrence(pattern, occurrence)
@@ -204,11 +186,3 @@ class PatternTracker:
         with open(filepath, "r") as f:
             data = json.load(f)
         return data.get("statistics", {})
-
-    def reset_calibration(self):
-        logger.warning("🔄 RESET: Recalibrando tracker")
-        for pattern_id in self.state["pattern_states"]:
-            self.state["pattern_states"][pattern_id]["last_id"] = None
-        self.state["last_result"] = None
-        self._save_state()
-        logger.info("✅ Tracker recalibrado")

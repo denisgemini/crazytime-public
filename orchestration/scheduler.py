@@ -44,24 +44,21 @@ class CrazyTimeScheduler:
             logger.info("🚀 INICIANDO CICLO DE ACTUALIZACIÓN")
             logger.info("=" * 70)
 
-            # CAMBIO 5: Primero actualizar datos, luego verificar brechas
+            # Actualizar datos
             new_spins = self._update_data()
             if new_spins == 0:
                 logger.info("✅ No hay datos nuevos, ciclo completado")
-                self._update_last_run()  # CAMBIO 7: Registrar ejecución
+                self._update_last_run()
                 return
-
-            # CAMBIO 5: Ahora verificar brechas DESPUÉS de actualizar datos
-            self._check_service_gap()
 
             self._process_tracking()
             self._process_alerts()
 
-            # PASO 3.5: Análisis de ventanas
+            # Análisis de ventanas
             self._run_window_analysis()
             self._scheduled_tasks()
 
-            self._update_last_run()  # CAMBIO 7: Registrar ejecución
+            self._update_last_run()
 
             logger.info("=" * 70)
             logger.info("✅ CICLO COMPLETADO EXITOSAMENTE")
@@ -78,85 +75,6 @@ class CrazyTimeScheduler:
                 f.write(datetime.now().isoformat())
         except Exception as e:
             logger.error(f"Error guardando last_run: {e}")
-
-    def _check_service_gap(self):
-        """
-        CAMBIO 6: Detección inteligente de brechas usando heartbeat (11s threshold).
-
-        Heartbeat = started_at(último) - timestamp(anterior al último)
-        Normal: ~5 segundos
-        Brecha: > 11 segundos
-        """
-        try:
-            max_id = self.db.get_max_id()
-            if max_id is None or max_id < 2:
-                logger.debug("⚠️ Base de datos con menos de 2 registros")
-                return
-
-            last_spin = self.db.get_spin_by_id(max_id)
-            if not last_spin or not last_spin.get("started_at"):
-                logger.debug("⚠️ Último registro sin started_at")
-                return
-
-            prev_spin = self.db.get_spin_by_id(max_id - 1)
-            if not prev_spin:
-                logger.debug("⚠️ No existe registro anterior")
-                return
-
-            # Calcular heartbeat
-            try:
-                current_start = datetime.fromisoformat(last_spin["started_at"])
-                prev_ts = datetime.fromisoformat(prev_spin["timestamp"])
-                heartbeat = (current_start - prev_ts).total_seconds()
-            except Exception as e:
-                logger.error(f"Error calculando heartbeat: {e}")
-                return
-
-            # CAMBIO 6: Umbral de 11 segundos (5s normal + 6s tolerancia)
-            GAP_THRESHOLD = 11.0
-
-            if heartbeat > GAP_THRESHOLD:
-                gap_minutes = heartbeat / 60
-                logger.warning(f"🚨 BRECHA DE SERVICIO DETECTADA: {heartbeat:.1f}s ({gap_minutes:.1f} min)")
-                self._log_service_gap(heartbeat, last_spin["timestamp"], prev_spin["timestamp"])
-
-                # Recalibrar solo si la brecha es significativa (> 1 minuto)
-                if gap_minutes > 1:
-                    logger.info("🔄 Recalibrando sistemas...")
-                    self.tracker.reset_calibration()
-                    self.alert_manager.reset_states()
-
-                    if self.notifier:
-                        self.notifier.send_message(
-                            f"⚠️ <b>RECONEXIÓN DESPUÉS DE BRECHA</b>\n\n"
-                            f"⏱️ Brecha: {heartbeat:.1f}s ({gap_minutes:.1f} min)\n"
-                            f"🔄 Sistemas recalibrados\n"
-                            f"✅ Operación restaurada"
-                        )
-            else:
-                logger.debug(f"✅ Heartbeat normal: {heartbeat:.1f}s")
-
-        except Exception as e:
-            logger.error(f"Error verificando brechas: {e}")
-
-    def _log_service_gap(self, gap_seconds: float, last_timestamp: str, prev_timestamp: str):
-        """CAMBIO 6: Registrar brecha con información mejorada"""
-        try:
-            os.makedirs("data", exist_ok=True)
-            bitacora = "data/bitacora_brechas.csv"
-            if not os.path.exists(bitacora):
-                with open(bitacora, "w") as f:
-                    f.write("Fecha_Deteccion,Fecha_Ultimo_Dato,Fecha_Dato_Anterior,Brecha_Segundos,Brecha_Minutos\n")
-
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            gap_minutes = gap_seconds / 60
-            line = f"{now_str},{last_timestamp},{prev_timestamp},{gap_seconds:.1f},{gap_minutes:.2f}\n"
-
-            with open(bitacora, "a") as f:
-                f.write(line)
-            logger.info(f"📝 Brecha registrada: {gap_seconds:.1f}s ({gap_minutes:.1f} min)")
-        except Exception as e:
-            logger.error(f"Error registrando brecha: {e}")
 
     def _update_data(self) -> int:
         try:

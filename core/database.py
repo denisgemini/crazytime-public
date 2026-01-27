@@ -36,6 +36,8 @@ class Database:
                 resultado TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
                 started_at TEXT,
+                settled_at TEXT,
+                latido INTEGER DEFAULT 0,
                 top_slot_result TEXT,
                 top_slot_multiplier INTEGER,
                 is_top_slot_matched BOOLEAN,
@@ -96,65 +98,65 @@ class Database:
             return 0
         conn = None
         insertados = 0
-        duplicados_filtrados = 0
         try:
             conn = self.get_connection(read_only=False)
             cur = conn.cursor()
 
-            # Obtener el último timestamp para detección de duplicados
-            cur.execute("SELECT timestamp, resultado FROM tiros ORDER BY id DESC LIMIT 1")
-            last_row = cur.fetchone()
-            last_timestamp = None
-            last_resultado = None
-            if last_row:
-                last_timestamp = datetime.fromisoformat(last_row[0])
-                last_resultado = last_row[1]
+            # Ordenar por inicio real para asegurar cronología
+            datos_ordenados = sorted(datos, key=lambda x: x.get("started_at", ""))
 
-            for dato in reversed(datos):
+            for dato in datos_ordenados:
                 try:
-                    current_timestamp = datetime.fromisoformat(dato["timestamp"])
+                    current_start = dato.get("started_at")
+                    current_end = dato.get("timestamp") # Fin del tiro según API
                     current_resultado = dato["resultado"]
 
-                    # Verificar duplicado exacto por timestamp único
-                    cur.execute("SELECT 1 FROM tiros WHERE timestamp = ?", (dato["timestamp"],))
+                    if not current_start or not current_end:
+                        continue
+
+                    # 1. Filtro de duplicados (±10s sobre inicio real)
+                    cur.execute("""
+                        SELECT 1 FROM tiros 
+                        WHERE resultado = ? 
+                        AND datetime(timestamp) BETWEEN datetime(?, '-10 seconds') AND datetime(?, '+10 seconds')
+                    """, (current_resultado, current_start, current_start))
+                    
                     if cur.fetchone():
                         continue
 
-                    # Verificar duplicado por timestamp cercano (±10 segundos) y mismo resultado
-                    if last_timestamp and current_resultado == last_resultado:
-                        diff = abs((current_timestamp - last_timestamp).total_seconds())
-                        if diff <= 10:
-                            duplicados_filtrados += 1
-                            logger.debug(f"Duplicado filtrado: {current_resultado} @ {dato['timestamp']} (diff: {diff}s)")
-                            continue
+                    # 2. Calcular Latido (Inicio Actual - Fin Anterior)
+                    cur.execute("SELECT settled_at FROM tiros ORDER BY id DESC LIMIT 1")
+                    last_row = cur.fetchone()
+                    
+                    latido = 0
+                    if last_row and last_row[0]:
+                        try:
+                            t_prev_end = datetime.fromisoformat(last_row[0])
+                            t_curr_start = datetime.fromisoformat(current_start)
+                            latido = int((t_curr_start - t_prev_end).total_seconds())
+                        except Exception:
+                            latido = 0
 
-                    # Insertar registro
+                    # 3. Insertar con nuevo modelo
                     cur.execute("""
                         INSERT INTO tiros (
-                            resultado, timestamp, started_at,
+                            resultado, timestamp, settled_at, latido,
                             top_slot_result, top_slot_multiplier, is_top_slot_matched,
                             bonus_multiplier, ct_flapper_blue, ct_flapper_green, ct_flapper_yellow
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        dato["resultado"], dato["timestamp"], dato.get("started_at"),
+                        current_resultado, current_start, current_end, latido,
                         dato.get("top_slot_result"), dato.get("top_slot_multiplier"),
                         dato.get("is_top_slot_matched", False), dato.get("bonus_multiplier"),
                         dato.get("ct_flapper_blue"), dato.get("ct_flapper_green"), dato.get("ct_flapper_yellow")
                     ))
                     insertados += 1
 
-                    # Actualizar último timestamp para siguiente iteración
-                    last_timestamp = current_timestamp
-                    last_resultado = current_resultado
-
                 except sqlite3.IntegrityError:
                     continue
                 except Exception as e:
                     logger.error(f"Error insertando registro: {e}")
                     continue
-
-            if duplicados_filtrados > 0:
-                logger.info(f"🚫 {duplicados_filtrados} duplicados filtrados")
 
             conn.commit()
             return insertados
