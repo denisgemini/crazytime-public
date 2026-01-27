@@ -20,6 +20,17 @@ from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from pydantic import BaseModel, Field
 
+# CrazyTime core imports
+from core.database import Database
+from config.patterns import ALL_PATTERNS
+
+# Initialize global DB handler
+db = Database(str(DB_PATH))
+
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -131,14 +142,9 @@ class StatusResponse(BaseModel):
 
 # ============== Database Helpers ============== 
 
-@contextmanager
-def get_db_connection(read_only: bool = True):
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+def get_db_connection():
+    """Usa la clase Database global para obtener una conexión optimizada"""
+    return db.get_connection(read_only=True)
 
 def get_tracker_state() -> dict:
     try:
@@ -162,34 +168,27 @@ def get_distances(pattern_id: str) -> dict:
     except FileNotFoundError:
         return {"distances": [], "statistics": {}}
 
+# ============== Configuration Cache ============== 
+
+# Cargar configuración una sola vez al inicio
+def _init_pattern_config():
+    patterns = {}
+    for p in ALL_PATTERNS:
+        # Solo nos interesan Pachinko y CrazyTime para el dashboard principal por ahora
+        if p.id in ['pachinko', 'crazytime']:
+            patterns[p.id] = {
+                'name': p.name,
+                'type': p.type,
+                'value': p.value,
+                'thresholds': p.thresholds
+            }
+    return patterns
+
+PATTERN_CONFIG_CACHE = _init_pattern_config()
+
 def get_pattern_config() -> dict:
-    """Get pattern definitions importing directly from config module"""
-    try:
-        # Importar dinámicamente el módulo de configuración
-        import sys
-        if str(BASE_CONFIG_PATH.parent) not in sys.path:
-            sys.path.insert(0, str(BASE_CONFIG_PATH.parent))
-            
-        from config.patterns import ALL_PATTERNS
-        
-        patterns = {}
-        for p in ALL_PATTERNS:
-            # Solo nos interesan Pachinko y CrazyTime para el dashboard principal por ahora
-            if p.id in ['pachinko', 'crazytime']:
-                patterns[p.id] = {
-                    'name': p.name,
-                    'type': p.type,
-                    'value': p.value,
-                    'thresholds': p.thresholds
-                }
-        return patterns
-    except ImportError as e:
-        print(f"Error importing config: {e}")
-        # Fallback manual seguro
-        return {
-            "pachinko": {"name": "Pachinko", "type": "simple", "value": "Pachinko", "thresholds": [50, 110]},
-            "crazytime": {"name": "Crazy Time", "type": "simple", "value": "CrazyTime", "thresholds": [190, 250]}
-        }
+    """Retorna la configuración desde la caché para máxima eficiencia"""
+    return PATTERN_CONFIG_CACHE
 
 # ============== API Endpoints ============== 
 
@@ -201,31 +200,25 @@ async def dashboard(request: Request):
 async def get_status():
     print("➡️ Solicitud recibida: /api/status")
     try:
-        with get_db_connection() as conn:
-            print("   DB conectada")
-            last_spin = conn.execute(
-                "SELECT pseudo_id as id, resultado, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1"
-            ).fetchone()
-            print(f"   Last spin raw: {last_spin}")
+        # Obtener estadísticas del día usando el método oficial
+        stats_dia = db.obtener_estadisticas_dia()
+        
+        # Obtener último tiro usando la vista ordenada (limit 1)
+        last_spin = db.get_spins_after_pseudo_id(0, limit=1)
+        last_spin = last_spin[0] if last_spin else None
+        
+        current_id = last_spin['id'] if last_spin else 0
+        print(f"   Current ID: {current_id}")
 
-            today = datetime.now().strftime("%Y-%m-%d")
-            today_stats = conn.execute(
-                "SELECT COUNT(*) as count FROM tiros_ordenados WHERE timestamp LIKE ?",
-                (f"{today}%",)
-            ).fetchone()
-            
-            current_id = last_spin['id'] if last_spin else 0
-            print(f"   Current ID: {current_id}")
-
-            return StatusResponse(
-                status="running" if current_id > 0 else "stopped",
-                service_running=current_id > 0,
-                last_spin_id=current_id,
-                last_result=last_spin['resultado'] if last_spin else None,
-                last_spin_time=last_spin['timestamp'] if last_spin else None,
-                total_spins_today=today_stats['count'] if today_stats else 0,
-                timestamp=datetime.now().isoformat()
-            )
+        return StatusResponse(
+            status="running" if current_id > 0 else "stopped",
+            service_running=current_id > 0,
+            last_spin_id=current_id,
+            last_result=last_spin['resultado'] if last_spin else None,
+            last_spin_time=last_spin['timestamp'] if last_spin else None,
+            total_spins_today=stats_dia.get('total_spins', 0),
+            timestamp=datetime.now().isoformat()
+        )
     except Exception as e:
         print(f"❌ ERROR en get_status: {e}")
         import traceback

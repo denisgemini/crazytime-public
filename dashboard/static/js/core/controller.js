@@ -28,8 +28,8 @@ export function startController() {
     startClock();
     updateDashboard();
 
-    // Polling de datos cada 3 segundos
-    state.timers.refresh = setInterval(updateDashboard, 3000);
+    // Polling de datos cada 30 segundos (Optimizado para CrazyTime)
+    state.timers.refresh = setInterval(updateDashboard, 30000);
 
     // Inicializar listeners de pestañas (Pachinko/CrazyTime)
     const tabs = document.querySelectorAll('.distance-tab');

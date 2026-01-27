@@ -43,10 +43,10 @@ class PatternTracker:
             except Exception as e:
                 logger.error(f"Error cargando estado del tracker: {e}")
         return {
-            "last_processed_id": 0,
+            "last_processed_pseudo_id": 0,
             "last_result": None,
             "pattern_states": {
-                pattern.id: {"last_id": None, "occurrences_count": 0}
+                pattern.id: {"last_pseudo_id": None, "occurrences_count": 0}
                 for pattern in ALL_PATTERNS
             }
         }
@@ -60,18 +60,18 @@ class PatternTracker:
             logger.error(f"Error guardando estado del tracker: {e}")
 
     def process_new_spins(self) -> int:
-        last_id = self.state["last_processed_id"]
-        new_spins = self.db.get_spins_after_id(last_id)
+        last_pseudo_id = self.state.get("last_processed_pseudo_id", 0)
+        new_spins = self.db.get_spins_after_pseudo_id(last_pseudo_id)
         if not new_spins:
             return 0
-        logger.info(f"📊 Tracker: Procesando {len(new_spins)} tiros nuevos")
+        logger.info(f"📊 Tracker: Procesando {len(new_spins)} tiros nuevos (Pseudo IDs)")
         for spin in new_spins:
             self._process_spin(spin)
         self._save_state()
         return len(new_spins)
 
     def _process_spin(self, spin: dict):
-        spin_id = spin["id"]
+        spin_id = spin["id"] # Ahora es el pseudo_id gracias a get_spins_after_pseudo_id
         resultado = spin["resultado"]
         for pattern in ALL_PATTERNS:
             if pattern.type == "simple" and resultado == pattern.value:
@@ -82,48 +82,34 @@ class PatternTracker:
                     step1, step2 = pattern.value
                     if self.state["last_result"] == step1 and resultado == step2:
                         self._record_occurrence(pattern, spin)
-        self.state["last_processed_id"] = spin_id
+        self.state["last_processed_pseudo_id"] = spin_id
         self.state["last_result"] = resultado
 
     def _record_occurrence(self, pattern: Pattern, spin: dict):
-        spin_id = spin["id"]
+        current_pseudo_id = spin["id"]
         pattern_state = self.state["pattern_states"][pattern.id]
-        last_id = pattern_state["last_id"]
+        last_pseudo_id = pattern_state.get("last_pseudo_id")
+        
+        # Retrocompatibilidad: si no hay last_pseudo_id pero hay last_id
+        if last_pseudo_id is None and "last_id" in pattern_state:
+            last_pseudo_id = pattern_state["last_id"]
 
-        # CAMBIO 2: Si last_id es None, buscar en BD última aparición
-        if last_id is None:
-            # Solo buscar en BD para patrones simples
-            if pattern.type == "simple":
-                db_last_id = self.db.get_last_occurrence_id(pattern.value)
-                if db_last_id is not None:
-                    last_id = db_last_id
-                    logger.info(f"🔍 [{pattern.name}] Recuperando última aparición de BD: ID {last_id}")
-                else:
-                    logger.info(f"⚪ [{pattern.name}] Primera aparición en ID {spin_id} (calibrando)")
-            else:
-                # Para secuencias, siempre calibrar desde cero
-                logger.info(f"⚪ [{pattern.name}] Primera aparición en ID {spin_id} (calibrando)")
-
-
-        # Calcular distancia usando COUNT(*) real entre IDs
-        if last_id is not None:
-            # Contar giros reales entre last_id y spin_id (excluyendo extremos)
-            cursor = self.db.get_connection().cursor()
-            cursor.execute("SELECT COUNT(*) FROM tiros WHERE id > ? AND id <= ?", (last_id, spin_id))
-            distance = cursor.fetchone()[0]
-            cursor.close()
-            logger.info(f"✅ [{pattern.name}] Aparición en ID {spin_id} (distancia: {distance})")
+        # Calcular distancia: Resta directa de Pseudo IDs (Perfección cronológica)
+        if last_pseudo_id is not None:
+            distance = current_pseudo_id - last_pseudo_id
+            logger.info(f"✅ [{pattern.name}] Aparición en Pseudo ID {current_pseudo_id} (distancia: {distance})")
         else:
+            logger.info(f"⚪ [{pattern.name}] Primera aparición en Pseudo ID {current_pseudo_id} (calibrando)")
             distance = None
 
         occurrence = PatternOccurrence(
-            spin_id=spin_id,
+            spin_id=current_pseudo_id,
             timestamp=spin["timestamp"],
             distance_from_previous=distance,
             details=self._extract_details(pattern, spin)
         )
         self._save_occurrence(pattern, occurrence)
-        pattern_state["last_id"] = spin_id
+        pattern_state["last_pseudo_id"] = current_pseudo_id
         pattern_state["occurrences_count"] += 1
 
     def _extract_details(self, pattern: Pattern, spin: dict) -> dict:
