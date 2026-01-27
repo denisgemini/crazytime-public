@@ -1,55 +1,33 @@
-# CrazyTime v2 Dashboard - Checkpoint de Desarrollo
-**Fecha:** Lunes 26 Enero 2026
-**Estado:** Estable / Funcional / Limpio
+# CrazyTime v2.5 - Checkpoint de Desarrollo
+**Fecha:** Martes 27 Enero 2026
+**Estado:** **v2.5 ESTABLE** / Optimizado / Integridad Cronológica Total
 
 ## 1. Estado Actual del Sistema
-*   **Arquitectura:** FastAPI + Vanilla JS Modular.
-*   **Modelo de Datos:** Implementado el **"Nuevo Modelo de Latidos"**.
-    *   `timestamp` guarda el inicio real (`started_at`).
-    *   `settled_at` guarda el fin del tiro.
-    *   `latido` (Inicio actual - Fin anterior) grabado en BD.
-    *   Filtro de duplicados de ±10s activo y funcional.
-*   **Notificaciones:** Bot de Telegram configurado y probado (envía mensaje de inicio).
+*   **Integridad:** Implementado el sistema de **Pseudo IDs** y **Vistas SQL**. Los tiros se procesan en orden cronológico real sin importar el desorden de la API.
+*   **Alertas y Tracking:** Sincronizados al 100% con la vista `tiros_ordenados`.
+*   **Dashboard:** UI actualizada con **Anillo Neón Azul Celeste** para umbrales. Refresco optimizado a 30 segundos para GCP Free Tier.
+*   **Base de Datos:** SQLite optimizada con clase centralizada y métodos oficiales para todo el sistema.
 
-## 2. Tareas en Progreso (Próxima Sesión)
-*   **Script: `scripts/generar_resumen.py`**
-    *   **Lógica "Espera 11 / Apuesta 30"**: Algoritmo para contar HITS/MISSES basados en umbrales VIP.
-    *   **Gráfico de Salud**: Generación de `salud_latidos.png` con `matplotlib` (Rangos: <0, 0-4s, 5s, 6-11s, >11s).
-    *   **Exportación de Datos**: Generación de `tiros_hoy.csv` con historial completo (ID, Resultado, Inicio, Fin, Latido).
-    *   **Envío Telegram**: Mensaje (Estadísticas) + Imagen (Salud) + Documento (CSV).
-*   **Script: `scripts/descargar_datos.py`**
-    *   Uso de `python-telegram-bot` para descargar el último CSV del bot.
-    *   Inyección de datos del CSV a la base de datos local para sincronización manual de prueba.
+## 2. Gran Tarea Pendiente: "Dashboard de Bolsillo"
+*   **Script:** `scripts/generar_resumen.py` (Uso de **Pillow**, sin Pandas).
+*   **Objetivo:** Infografía neón profesional enviada vía Telegram cada noche a las **22:05**.
+*   **Corte Diario:** Rango de 22:00 a 22:00 (Hora Perú).
 
-## 3. Comandos de Interés
+## 3. Comandos Útiles
 ```bash
-# Ver latidos actuales
-python3 scripts/analyze_latidos.py
-# Probar notificador
-./venv/bin/python3 scripts/test_telegram.py
-# Subir cambios (Git)
-git add . && git commit -m "Desc..." && git push origin master
+# Ver duración real de tiros
+python3 scripts/analyze_durations.py
+# Iniciar sistema completo
+python3 main.py & python3 dashboard/app.py &
+# Subir cambios finales
+git add . && git commit -m "End of Session: v2.5 Finalized" && git push origin master
 ```
 
-## 3. Mapa de Archivos Clave
-Si necesitas editar algo, ve directo aquí:
+## 4. Mapa de Archivos Actualizado
+*   **Core Logic:** `core/database.py` (Contiene la Vista y Pseudo IDs).
+*   **Dashboard:** `dashboard/app.py` (FastAPI optimizado).
+*   **Analytics:** `analytics/pattern_tracker.py` (Cronológico).
+*   **Alertas:** `alerting/alert_manager.py` (Cronológico).
 
-*   **API / Backend:** `dashboard/app.py`
-*   **Configuración Patrones:** `config/patterns.py` (Importado dinámicamente).
-*   **Estilos:** `dashboard/static/css/styles.css` y `ticker_styles.css`.
-*   **Grid Distancias:** `dashboard/static/js/render/tabs.js`
-*   **Gráfica Barras:** `dashboard/static/js/render/charts.js`
-*   **Ticker (Cinta):** `dashboard/static/js/render/ticker.js`
-*   **Tarjetas/Ring:** `dashboard/static/js/render/cards.js`
-
-## 4. Próximos Pasos
-*   El sistema está listo para recibir mejoras visuales finales o nuevas funcionalidades.
-*   **Pendiente:** (Espacio para nuevas tareas).
-
-## 5. Comandos de Inicio
-```bash
-# Iniciar servidor
-python dashboard/app.py
-# O con uvicorn
-uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
-```
+---
+*Sesión cerrada con éxito. El sistema está listo para el siguiente nivel visual.*
