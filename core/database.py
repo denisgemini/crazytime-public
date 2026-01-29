@@ -15,18 +15,20 @@ class Database:
 
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db_path = db_path
-        self._ensure_database_exists()
+        self._ensure_schema()
         self._verify_integrity()
 
-    def _ensure_database_exists(self):
-        if os.path.exists(self.db_path):
-            return
-        logger.warning(f"⚠️ Base de datos no existe, creando: {self.db_path}")
+    def _ensure_schema(self):
+        """Asegura que la base de datos y todas sus tablas existan."""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
-        self._create_schema(conn)
-        conn.close()
-        logger.info("✅ Base de datos creada")
+        # Siempre abrimos conexión para garantizar que el esquema esté al día
+        try:
+            conn = sqlite3.connect(self.db_path)
+            self._create_schema(conn)
+            conn.close()
+        except Exception as e:
+            logger.critical(f"💥 Error inicializando esquema: {e}")
+            raise
 
     def _create_schema(self, conn: sqlite3.Connection):
         cur = conn.cursor()

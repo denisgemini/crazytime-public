@@ -35,8 +35,6 @@ logger.info(f"📂 ROOT_DIR configurado en: {ROOT_DIR}")
 BASE_DATA_PATH = ROOT_DIR / "data"
 BASE_CONFIG_PATH = ROOT_DIR / "config"
 DB_PATH = BASE_DATA_PATH / "db.sqlite3"
-TRACKER_STATE_PATH = BASE_DATA_PATH / ".tracker_state.json"
-ALERT_STATE_PATH = BASE_DATA_PATH / ".alert_state.json"
 DISTANCES_DIR = BASE_DATA_PATH / "distances"
 
 from fastapi import FastAPI, HTTPException, Query
@@ -157,18 +155,18 @@ def get_db_connection():
     return db.get_connection(read_only=True)
 
 def get_tracker_state() -> dict:
-    try:
-        with open(TRACKER_STATE_PATH, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
+    """Obtiene el estado del tracker desde la BD (v2.6)"""
+    state = db.get_state("pattern_tracker", "main_state")
+    if not state:
         return {"last_processed_id": 0, "pattern_states": {}}
+    return state
 
 def get_alert_state() -> dict:
-    try:
-        with open(ALERT_STATE_PATH, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
+    """Obtiene el estado de alertas desde la BD (v2.6)"""
+    state = db.get_state("alert_manager", "main_state")
+    if not state:
         return {}
+    return state
 
 def get_distances(pattern_id: str) -> dict:
     filepath = DISTANCES_DIR / f"{pattern_id}.json"
