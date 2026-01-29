@@ -1,0 +1,35 @@
+# 🎰 CrazyTime System v2.5 - Documentación de Referencia
+
+## 🚀 Resumen del Sistema
+Sistema avanzado de monitoreo y análisis estadístico para Crazy Time. Optimizado para integridad de datos 24/7 y ejecución eficiente en entornos de bajos recursos.
+
+## 🛠️ Arquitectura Consolidada (v2.5)
+- **Recolección:** Intervalo de **5 minutos** (300s) para filtrar desfases de API.
+- **Base de Datos:** SQLite en modo **WAL**. Fuente de verdad: tabla `tiros`.
+- **Integridad:** Uso de **IDs Reales e Inmutables** (Primary Key) para todo el flujo de análisis.
+- **Tracking:** Procesamiento secuencial mediante `PatternTracker`, sincronizado con archivos JSON en `data/distances/`.
+- **Frontend:** Dashboard en FastAPI que consume directamente la tabla base.
+
+## 📋 Componentes Principales
+- `main.py`: Servicio recolector en segundo plano.
+- `dashboard/app.py`: Servidor de API y Web UI.
+- `analytics/pattern_tracker.py`: Generador de estadísticas e historiales.
+- `scripts/analyze_latidos.py`: Auditoría de salud de conexión y cortes de Android.
+
+## 🔧 Comandos Rápidos
+```bash
+# Activar entorno
+source venv/bin/activate
+
+# Iniciar Recolector
+python3 main.py
+
+# Iniciar Dashboard
+python3 dashboard/app.py
+
+# Auditar Latidos
+python3 scripts/analyze_latidos.py
+```
+
+---
+*Nota: Este sistema está diseñado para la precisión cronológica total.*

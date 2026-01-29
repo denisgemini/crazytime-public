@@ -1,5 +1,6 @@
 """
-analytics/window_analyzer.py - Análisis de ventanas de apuesta.
+analytics/window_analyzer.py - Análisis profundo de ventanas de apuesta.
+Enfoque: Rentabilidad histórica de VENTANAS (Entries/Wins/Losses).
 """
 
 import os
@@ -21,25 +22,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class WindowResult:
-    pattern_id: str
-    pattern_name: str
-    threshold: int
-    window_start_offset: int
-    window_end_offset: int
-    total_opportunities: int
-    hits_in_window: int
-    misses: int
-    hit_rate: float
-    avg_payout: float
-    total_payout: float
-    total_invested: float
-    profit_loss: float
-    roi: float
-
 class WindowAnalyzer:
-    """Analizador de ventanas de apuesta."""
+    """Analizador histórico de ventanas de apuesta."""
 
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db = Database(db_path)
@@ -47,7 +31,7 @@ class WindowAnalyzer:
         os.makedirs(self.results_dir, exist_ok=True)
 
     def analyze_all_patterns(self) -> dict:
-        logger.info("📊 Iniciando análisis de ventanas...")
+        logger.info("📊 Iniciando análisis de ventanas (Histórico)...")
         all_results = {}
         for pattern in VIP_PATTERNS:
             results = self.analyze_pattern(pattern)
@@ -56,61 +40,83 @@ class WindowAnalyzer:
         return all_results
 
     def analyze_pattern(self, pattern: Pattern) -> dict:
-        logger.info(f"🔍 Analizando {pattern.name}...")
+        logger.info(f"🔍 Analizando ventanas para {pattern.name}...")
         results = {
             "pattern_id": pattern.id,
             "pattern_name": pattern.name,
-            "thresholds": {},
+            "windows": {}, # Reemplaza 'thresholds'
             "analyzed_at": datetime.now().isoformat()
         }
         occurrences = self._get_occurrences(pattern)
         if len(occurrences) < 2:
             logger.warning(f"⚠️ Datos insuficientes para {pattern.name}")
             return results
+            
         for threshold in pattern.thresholds:
-            window_result = self._analyze_threshold(pattern, threshold, occurrences)
-            results["thresholds"][str(threshold)] = window_result
-            logger.info(f"  Umbral {threshold}: Hit Rate={window_result['hit_rate']:.1f}%, ROI={window_result['roi']:+.1f}%")
+            window_result = self._analyze_window_zone(pattern, threshold, occurrences)
+            window_key = f"[{window_result['window_start_offset']}-{window_result['window_end_offset']}]"
+            results["windows"][window_key] = window_result
+            
+            logger.info(f"  Ventana {window_key}: Win Rate={window_result['win_rate']:.1f}%, ROI={window_result['roi']:+.1f}%")
+            
         self._save_pattern_report(pattern, results)
         self._generate_excel_report(pattern, results, occurrences)
         return results
 
-    def _analyze_threshold(self, pattern: Pattern, threshold: int, occurrences: list[dict]) -> dict:
-        window_start_offset, window_end_offset = get_window_range(threshold)
-        opportunities = 0
-        hits = 0
+    def _analyze_window_zone(self, pattern: Pattern, threshold: int, occurrences: list[dict]) -> dict:
+        w_start, w_end = get_window_range(threshold)
+        
+        entries = 0
+        wins = 0
+        losses = 0
         total_payout = 0
+        
+        # Iterar sobre pares de ocurrencias (Actual -> Siguiente)
         for i in range(len(occurrences) - 1):
             current = occurrences[i]
             next_occ = occurrences[i + 1]
-            distance = next_occ.get("distance_from_previous")
-            if distance is None or distance < threshold:
+            dist = next_occ.get("distance_from_previous")
+            
+            if dist is None:
                 continue
-            opportunities += 1
+                
+            # LÓGICA ESTRICTA DE VENTANA
+            # 1. ¿Llegamos a la zona?
+            if dist < w_start:
+                continue # Ignorar
+                
+            # Entramos
+            entries += 1
+            
+            # 2. Resultado
             current_id = current["spin_id"]
-            window_start_id = current_id + window_start_offset
-            window_end_id = current_id + window_end_offset
             next_id = next_occ["spin_id"]
-            if window_start_id <= next_id <= window_end_id:
-                hits += 1
+            target_start = current_id + w_start
+            target_end = current_id + w_end
+            
+            if target_start <= next_id <= target_end:
+                wins += 1
                 payout = self._calculate_payout(pattern, next_occ["details"])
                 total_payout += payout
-        misses = opportunities - hits
-        hit_rate = (hits / opportunities * 100) if opportunities > 0 else 0
-        avg_payout = (total_payout / hits) if hits > 0 else 0
+            else:
+                losses += 1
+
+        win_rate = (wins / entries * 100) if entries > 0 else 0
+        avg_payout = (total_payout / wins) if wins > 0 else 0
+        
         window_size = WINDOW_CONFIG["window_size"]
-        total_invested = opportunities * window_size
+        total_invested = entries * window_size # Costo por entrar a jugar la ventana completa
         profit_loss = total_payout - total_invested
         roi = (profit_loss / total_invested * 100) if total_invested > 0 else 0
+        
         return {
-            "threshold": threshold,
-            "window_start_offset": window_start_offset,
-            "window_end_offset": window_end_offset,
-            "window_size": window_size,
-            "total_opportunities": opportunities,
-            "hits_in_window": hits,
-            "misses": misses,
-            "hit_rate": round(hit_rate, 2),
+            "window_range": f"[{w_start}-{w_end}]",
+            "window_start_offset": w_start,
+            "window_end_offset": w_end,
+            "entries": entries,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 2),
             "avg_payout": round(avg_payout, 2),
             "total_payout": round(total_payout, 2),
             "total_invested": total_invested,
@@ -159,58 +165,86 @@ class WindowAnalyzer:
 
     def _generate_excel_report(self, pattern: Pattern, results: dict, occurrences: list[dict]):
         if not HAS_OPENPYXL:
-            logger.warning("⚠️ openpyxl no instalado, omitiendo Excel")
             return
             
         try:
             wb = Workbook()
             ws_summary = wb.active
-            ws_summary.title = "Resumen"
-            headers = ["Umbral", "Ventana Inicio", "Ventana Fin", "Oportunidades", "Aciertos", "Fallos", "Hit Rate %", "Pago Promedio", "ROI %", "Ganancia/Pérdida"]
+            ws_summary.title = "Resumen Ventanas"
+            
+            # Cabeceras centradas en Ventanas
+            headers = ["Ventana", "Entradas (Intentos)", "Wins (Aciertos)", "Losses (Fallos)", "Win Rate %", "Pago Promedio", "ROI %", "Ganancia/Pérdida"]
             ws_summary.append(headers)
+            
             for cell in ws_summary[1]:
                 cell.font = Font(bold=True)
                 cell.fill = PatternFill(start_color="366092", fill_type="solid")
                 cell.font = Font(bold=True, color="FFFFFF")
-            for threshold_str, data in results["thresholds"].items():
-                row = [data["threshold"], data["window_start_offset"], data["window_end_offset"],
-                       data["total_opportunities"], data["hits_in_window"], data["misses"],
-                       data["hit_rate"], data["avg_payout"], data["roi"], data["profit_loss"]]
+                
+            for w_key, data in results["windows"].items():
+                row = [
+                    w_key, 
+                    data["entries"], 
+                    data["wins"], 
+                    data["losses"],
+                    data["win_rate"], 
+                    data["avg_payout"], 
+                    data["roi"], 
+                    data["profit_loss"]
+                ]
                 ws_summary.append(row)
-            ws_detail = wb.create_sheet("Detalle por Oportunidad")
-            detail_headers = ["ID Aparición", "Fecha", "Distancia", "Umbral", "En Ventana?", "Pago", "Detalles Bonus"]
+                
+            ws_detail = wb.create_sheet("Detalle Histórico")
+            detail_headers = ["ID Aparición", "Fecha", "Distancia", "Ventana Jugada", "Resultado", "Pago", "Detalles"]
             ws_detail.append(detail_headers)
-            for cell in ws_detail[1]:
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="366092", fill_type="solid")
-                cell.font = Font(bold=True, color="FFFFFF")
+            
             for i in range(len(occurrences) - 1):
                 current = occurrences[i]
                 next_occ = occurrences[i + 1]
-                distance = next_occ.get("distance_from_previous")
-                if distance is None:
+                dist = next_occ.get("distance_from_previous")
+                
+                if dist is None:
                     continue
-                threshold_reached = None
-                for t in pattern.thresholds:
-                    if distance >= t:
-                        threshold_reached = t
-                if threshold_reached is None:
-                    continue
-                window_start, window_end = get_window_range(threshold_reached)
-                current_id = current["spin_id"]
-                next_id = next_occ["spin_id"]
-                in_window = (current_id + window_start <= next_id <= current_id + window_end)
-                payout = 0
-                if in_window:
-                    payout = self._calculate_payout(pattern, next_occ["details"])
-                details_str = self._format_bonus_details(pattern, next_occ["details"])
-                row = [next_id, next_occ["timestamp"], distance, threshold_reached, "SÍ" if in_window else "NO", payout, details_str]
-                ws_detail.append(row)
+                    
+                # Determinar qué ventana se jugó (si alguna)
+                played_window = None
+                result_str = "-"
+                
+                for threshold in pattern.thresholds:
+                    w_start, w_end = get_window_range(threshold)
+                    if dist >= w_start:
+                        played_window = f"[{w_start}-{w_end}]"
+                        # Check result
+                        current_id = current["spin_id"]
+                        next_id = next_occ["spin_id"]
+                        target_start = current_id + w_start
+                        target_end = current_id + w_end
+                        
+                        if target_start <= next_id <= target_end:
+                            result_str = "WIN ✅"
+                        else:
+                            result_str = "LOSS ❌"
+                        break # Asumimos que solo juega la ventana más cercana que superó
+                
+                if played_window:
+                    payout = self._calculate_payout(pattern, next_occ["details"]) if result_str == "WIN ✅" else 0
+                    details_str = self._format_bonus_details(pattern, next_occ["details"])
+                    
+                    row = [
+                        next_occ["spin_id"], 
+                        next_occ["timestamp"], 
+                        dist, 
+                        played_window, 
+                        result_str, 
+                        payout, 
+                        details_str
+                    ]
+                    ws_detail.append(row)
+                    
             excel_path = os.path.join(self.results_dir, f"{pattern.id}_window_analysis.xlsx")
             wb.save(excel_path)
             logger.info(f"📊 Excel generado: {excel_path}")
-        except ImportError:
-            logger.warning("⚠️ openpyxl no instalado, omitiendo Excel")
+            
         except Exception as e:
             logger.error(f"Error generando Excel: {e}")
 

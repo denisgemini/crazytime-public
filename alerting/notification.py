@@ -130,36 +130,68 @@ class TelegramNotifier:
             logger.error(f"❌ Error de Telegram: {e}")
             return False
 
-    def enviar_resumen_diario(self, estadisticas: dict) -> bool:
+    def enviar_resumen_diario(self, data: dict) -> bool:
         try:
-            fecha = datetime.now().strftime("%Y-%m-%d")
-            total = estadisticas.get("total_spins", 0)
-            if total == 0:
-                return False
-            num_1 = estadisticas.get("1", 0)
-            num_2 = estadisticas.get("2", 0)
-            num_5 = estadisticas.get("5", 0)
-            pct_1 = (num_1 / total * 100) if total > 0 else 0
-            pct_2 = (num_2 / total * 100) if total > 0 else 0
-            pct_5 = (num_5 / total * 100) if total > 0 else 0
-            mensaje = f"""📊 <b>RESUMEN DIARIO - CRAZYTIME</b>
+            # 1. Cabecera Festiva
+            now = datetime.now()
+            semana = now.strftime("%U")
+            dias_es = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"]
+            dia_semana = dias_es[now.weekday()]
+            
+            start_str = data.get("range_start", "").replace("T", " ")[:16]
+            end_str = data.get("range_end", "").replace("T", " ")[:16]
 
-📅 <b>Fecha:</b> {fecha}
-🔢 <b>Total de spins:</b> {total}
+            mensaje = f"🎪 <b>¡RESUMEN DIARIO CRAZY MONITOR!</b> 🎡\n"
+            mensaje += f"━━━━━━━━━━━━━━━━━━━━\n"
+            mensaje += f"📅 <b>SEMANA {semana} • {dia_semana}</b>\n"
+            mensaje += f"🕒 <code>{start_str}</code> ➔ <code>{end_str}</code>\n\n"
 
-<b>🎲 NÚMEROS BÁSICOS:</b>
-• 1: {num_1} veces ({pct_1:.1f}%)
-• 2: {num_2} veces ({pct_2:.1f}%)
-• 5: {num_5} veces ({pct_5:.1f}%)
-• 10: {estadisticas.get("10", 0)} veces
+            # 2. Análisis de Ventanas (Foco Estratégico)
+            mensaje += "🎯 <b>CAZANDO LA VENTAJA</b>\n"
+            
+            patterns_data = data.get("patterns", [])
+            for p in patterns_data:
+                mensaje += f"━━━━━━━━━━━━━━━━━━━━\n"
+                mensaje += f"🎰 <b>{p['name'].upper()}</b>\n"
+                mensaje += f"✨ Apariciones: <b>{p['count']}</b>\n"
+                
+                if 'windows' in p and p['windows']:
+                    for w in p['windows']:
+                        # Calcular el rango real de la ventana para el reporte
+                        w_start, w_end = get_window_range(w['threshold'])
+                        mensaje += f"  📍 <b>Ventana [{w_start}-{w_end}]</b>\n"
+                        mensaje += f"    ✅ Aciertos: <b>{w['hits']}</b>\n"
+                        mensaje += f"    ❌ Fallos:   <b>{w['misses']}</b>\n"
+                else:
+                    mensaje += "  💨 <i>Sin oportunidades de ventana hoy...</i>\n"
 
-<b>🎰 BONUS ROUNDS:</b>
-• Coin Flip: {estadisticas.get("CoinFlip", 0)} veces
-• Cash Hunt: {estadisticas.get("CashHunt", 0)} veces
-• Pachinko: {estadisticas.get("Pachinko", 0)} veces
-• Crazy Time: {estadisticas.get("CrazyTime", 0)} veces
-"""
+            # 3. Salud del Sistema (Latidos)
+            l = data.get("latidos", {})
+            total_l = sum(l.values()) if l else 0
+            
+            mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+            mensaje += "🛡️ <b>ESTABILIDAD DEL SISTEMA</b>\n"
+            if total_l > 0:
+                mensaje += f"💎 5s (Ideal):  <b>{l.get('5s', 0)}</b> ({(l.get('5s', 0)/total_l)*100:.1f}%)\n"
+                mensaje += f"⚡ 0-4s:        <b>{l.get('0_4s', 0)}</b> ({(l.get('0_4s', 0)/total_l)*100:.1f}%)\n"
+                mensaje += f"🐢 6-11s:       <b>{l.get('6_11s', 0)}</b> ({(l.get('6_11s', 0)/total_l)*100:.1f}%)\n"
+                mensaje += f"⚠️ Gaps >11s:   <b>{l.get('gt11s', 0)}</b> ({(l.get('gt11s', 0)/total_l)*100:.1f}%)\n"
+                mensaje += f"🚫 Negativos:   <b>{l.get('neg', 0)}</b> ({(l.get('neg', 0)/total_l)*100:.1f}%)\n"
+            else:
+                mensaje += "❓ Sin datos de latidos registrados.\n"
+
+            # 4. Cierre
+            mensaje += f"━━━━━━━━━━━━━━━━━━━━\n"
+            mensaje += f"🔢 <b>Total spins del periodo:</b> <code>{data.get('total_spins', 0)}</code>\n"
+            mensaje += f"💰 <i>¡Mañana más y mejor ventaja!</i> 💰"
+
             return self.send_message(mensaje.strip())
+        except Exception as e:
+            logger.error(f"❌ Error enviando resumen diario: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error enviando resumen diario: {e}", exc_info=True)
+            return False
         except Exception as e:
             logger.error(f"❌ Error enviando resumen diario: {e}")
             return False

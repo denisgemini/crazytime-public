@@ -286,28 +286,69 @@ class Database:
     def obtener_estadisticas_dia(self, fecha: Optional[str] = None) -> dict:
         conn = None
         try:
-            if not fecha:
-                fecha = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m-%d")
+            # Lógica "Cierre de Jornada": 23:00 ayer a 23:00 hoy
+            now = datetime.now()
+            today_23 = now.replace(hour=23, minute=0, second=0, microsecond=0)
+            yesterday_23 = today_23 - timedelta(days=1)
+            
+            start_str = yesterday_23.isoformat()
+            end_str = today_23.isoformat()
+
             conn = self.get_connection(read_only=True)
             cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM tiros WHERE DATE(timestamp) = ?", (fecha,))
+            
+            # 1. Total de spins
+            cur.execute("""
+                SELECT COUNT(*) FROM tiros 
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (start_str, end_str))
             total_spins = cur.fetchone()[0]
+            
+            # 2. Conteos por resultado
             cur.execute("""
                 SELECT resultado, COUNT(*)
                 FROM tiros
-                WHERE DATE(timestamp) = ?
+                WHERE timestamp >= ? AND timestamp < ?
                 GROUP BY resultado
-            """, (fecha,))
+            """, (start_str, end_str))
             conteos = dict(cur.fetchall())
+
+            # 3. Estadísticas de Latidos
+            cur.execute("""
+                SELECT 
+                    SUM(CASE WHEN latido = 5 THEN 1 ELSE 0 END) as l_5,
+                    SUM(CASE WHEN latido >= 0 AND latido <= 4 THEN 1 ELSE 0 END) as l_0_4,
+                    SUM(CASE WHEN latido >= 6 AND latido <= 11 THEN 1 ELSE 0 END) as l_6_11,
+                    SUM(CASE WHEN latido > 11 THEN 1 ELSE 0 END) as l_gt11,
+                    SUM(CASE WHEN latido < 0 THEN 1 ELSE 0 END) as l_neg
+                FROM tiros
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (start_str, end_str))
+            
+            l_stats = cur.fetchone()
+            latidos = {
+                "5s": l_stats['l_5'] or 0,
+                "0_4s": l_stats['l_0_4'] or 0,
+                "6_11s": l_stats['l_6_11'] or 0,
+                "gt11s": l_stats['l_gt11'] or 0,
+                "neg": l_stats['l_neg'] or 0
+            }
+
             conn.close()
+            
             return {
                 "total_spins": total_spins,
-                "1": conteos.get("1", 0), "2": conteos.get("2", 0),
-                "5": conteos.get("5", 0), "10": conteos.get("10", 0),
-                "CoinFlip": conteos.get("CoinFlip", 0),
-                "CashHunt": conteos.get("CashHunt", 0),
-                "Pachinko": conteos.get("Pachinko", 0),
-                "CrazyTime": conteos.get("CrazyTime", 0)
+                "range_start": start_str,
+                "range_end": end_str,
+                "counts": {
+                    "1": conteos.get("1", 0), "2": conteos.get("2", 0),
+                    "5": conteos.get("5", 0), "10": conteos.get("10", 0),
+                    "CoinFlip": conteos.get("CoinFlip", 0),
+                    "CashHunt": conteos.get("CashHunt", 0),
+                    "Pachinko": conteos.get("Pachinko", 0),
+                    "CrazyTime": conteos.get("CrazyTime", 0)
+                },
+                "latidos": latidos
             }
         except Exception as e:
             logger.error(f"Error obteniendo estadísticas: {e}")

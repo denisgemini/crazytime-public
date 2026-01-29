@@ -183,7 +183,8 @@ class CrazyTimeScheduler:
             hour = now.hour
             minute = now.minute
             today = now.strftime("%Y-%m-%d")
-            if not (hour == 23 and minute >= 55):
+            # Reporte de cierre de jornada a las 23:24
+            if not (hour == 23 and minute >= 24):
                 return False
             if os.path.exists(self.daily_summary_file):
                 with open(self.daily_summary_file, "r") as f:
@@ -197,20 +198,27 @@ class CrazyTimeScheduler:
 
     def _send_daily_summary(self):
         try:
-            logger.info("📊 Generando resumen diario...")
-            stats = self.db.obtener_estadisticas_dia()
-            if not stats or stats["total_spins"] == 0:
-                logger.info("ℹ️ Sin datos para resumen diario")
+            logger.info("📊 Generando resumen diario estratégico...")
+            
+            # Delegar lógica al generador especializado
+            from analytics.daily_report import DailyReportGenerator
+            generator = DailyReportGenerator("data/db.sqlite3")
+            full_report = generator.generate()
+
+            if not full_report:
+                logger.info("ℹ️ Sin datos suficientes para resumen diario")
                 return
+
             if self.notifier:
-                self.notifier.enviar_resumen_diario(stats)
+                self.notifier.enviar_resumen_diario(full_report)
                 today = datetime.now().strftime("%Y-%m-%d")
                 os.makedirs(os.path.dirname(self.daily_summary_file), exist_ok=True)
                 with open(self.daily_summary_file, "w") as f:
                     f.write(today)
-                logger.info("✅ Resumen diario enviado")
+                logger.info("✅ Resumen diario estratégico enviado")
+
         except Exception as e:
-            logger.error(f"❌ Error enviando resumen diario: {e}")
+            logger.error(f"❌ Error enviando resumen diario: {e}", exc_info=True)
 
     def _should_run_backup(self) -> bool:
         try:
