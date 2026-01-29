@@ -153,14 +153,14 @@ class CrazyTimeScheduler:
             # Log de resultados
             for pattern_id, data in results.items():
                 pattern_name = data.get('pattern_name', pattern_id)
-                thresholds = data.get('thresholds', {})
+                windows = data.get('windows', {})
 
-                for threshold_str, metrics in thresholds.items():
+                for window_range, metrics in windows.items():
                     roi = metrics.get('roi', 0)
-                    hit_rate = metrics.get('hit_rate', 0)
+                    win_rate = metrics.get('win_rate', 0)
                     logger.info(
-                        f"   📈 {pattern_name} (umbral {threshold_str}): "
-                        f"ROI={roi:+.1f}%, Hit Rate={hit_rate:.1f}%"
+                        f"   📈 {pattern_name} (Ventana {window_range}): "
+                        f"ROI={roi:+.1f}%, Win Rate={win_rate:.1f}%"
                     )
 
             logger.info("✅ Análisis de ventanas completado")

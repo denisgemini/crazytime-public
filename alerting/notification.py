@@ -157,9 +157,9 @@ class TelegramNotifier:
                 
                 if 'windows' in p and p['windows']:
                     for w in p['windows']:
-                        # Calcular el rango real de la ventana para el reporte
-                        w_start, w_end = get_window_range(w['threshold'])
-                        mensaje += f"  📍 <b>Ventana [{w_start}-{w_end}]</b>\n"
+                        # Usar el rango pre-calculado por el generador
+                        rango = w.get('window_range', '???')
+                        mensaje += f"  📍 <b>Ventana {rango}</b>\n"
                         mensaje += f"    ✅ Aciertos: <b>{w['hits']}</b>\n"
                         mensaje += f"    ❌ Fallos:   <b>{w['misses']}</b>\n"
                 else:
