@@ -61,6 +61,17 @@ class Database:
             FROM tiros
         """)
         
+        # FASE 3: Tabla de Estado del Sistema (Persistencia Robusta)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS system_state (
+                module TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (module, key)
+            )
+        """)
+        
         conn.commit()
 
     def _verify_integrity(self):
@@ -73,11 +84,49 @@ class Database:
                 logger.error("❌ Tabla 'tiros' no existe")
                 conn.close()
                 raise RuntimeError("Tabla 'tiros' faltante")
+            
+            # Verificar system_state
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_state'")
+            if not cur.fetchone():
+                logger.warning("⚠️ Tabla 'system_state' no existe, se creará en próxima conexión de escritura")
+            
             conn.close()
             logger.info("✅ Integridad de BD verificada")
         except Exception as e:
             logger.critical(f"💥 Error verificando integridad: {e}")
             raise
+
+    def get_state(self, module: str, key: str, default=None):
+        """Obtiene un valor de estado del sistema."""
+        try:
+            conn = self.get_connection(read_only=True)
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM system_state WHERE module = ? AND key = ?", (module, key))
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                import json
+                return json.loads(row[0])
+            return default
+        except Exception as e:
+            logger.error(f"Error leyendo estado ({module}.{key}): {e}")
+            return default
+
+    def set_state(self, module: str, key: str, value):
+        """Guarda un valor de estado del sistema (UPSERT)."""
+        try:
+            import json
+            json_val = json.dumps(value)
+            conn = self.get_connection(read_only=False)
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT OR REPLACE INTO system_state (module, key, value, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (module, key, json_val))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error guardando estado ({module}.{key}): {e}")
 
     def get_connection(self, read_only: bool = False) -> sqlite3.Connection:
         """
@@ -118,7 +167,7 @@ class Database:
             for dato in datos_ordenados:
                 try:
                     current_start = dato.get("started_at")
-                    current_end = dato.get("timestamp") # Fin del tiro según API
+                    current_end = dato.get("settled_at") # Fin del tiro
                     current_resultado = dato["resultado"]
 
                     if not current_start or not current_end:

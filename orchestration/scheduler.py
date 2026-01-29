@@ -34,9 +34,9 @@ class CrazyTimeScheduler:
             self.notifier = None
         else:
             self.notifier = TelegramNotifier(token, chat_id)
-        self.daily_summary_file = "data/.last_summary"
+        # self.daily_summary_file = "data/.last_summary" <-- DEPRECATED
         self.backup_control_file = "data/backups/.last_backup"
-        self.last_run_file = "data/.scheduler_last_run"  # CAMBIO 7: Archivo para tracking de última ejecución
+        # self.last_run_file = "data/.scheduler_last_run" <-- DEPRECATED
 
     def run(self):
         try:
@@ -68,13 +68,8 @@ class CrazyTimeScheduler:
             self._send_error_alert(e)
 
     def _update_last_run(self):
-        """CAMBIO 7: Registra timestamp de última ejecución"""
-        try:
-            os.makedirs(os.path.dirname(self.last_run_file), exist_ok=True)
-            with open(self.last_run_file, "w") as f:
-                f.write(datetime.now().isoformat())
-        except Exception as e:
-            logger.error(f"Error guardando last_run: {e}")
+        """Registra timestamp de última ejecución en BD"""
+        self.db.set_state("scheduler", "last_run", datetime.now().isoformat())
 
     def _update_data(self) -> int:
         try:
@@ -186,11 +181,19 @@ class CrazyTimeScheduler:
             # Reporte de cierre de jornada a las 23:24
             if not (hour == 23 and minute >= 24):
                 return False
-            if os.path.exists(self.daily_summary_file):
-                with open(self.daily_summary_file, "r") as f:
+            
+            # Verificar estado en BD
+            last_date = self.db.get_state("scheduler", "last_summary_date")
+            
+            # Migración fallback (si existe archivo viejo y no hay dato en BD)
+            legacy_file = "data/.last_summary"
+            if not last_date and os.path.exists(legacy_file):
+                with open(legacy_file, "r") as f:
                     last_date = f.read().strip()
-                    if last_date == today:
-                        return False
+                self.db.set_state("scheduler", "last_summary_date", last_date)
+
+            if last_date == today:
+                return False
             return True
         except Exception as e:
             logger.error(f"Error verificando resumen diario: {e}")
@@ -212,9 +215,8 @@ class CrazyTimeScheduler:
             if self.notifier:
                 self.notifier.enviar_resumen_diario(full_report)
                 today = datetime.now().strftime("%Y-%m-%d")
-                os.makedirs(os.path.dirname(self.daily_summary_file), exist_ok=True)
-                with open(self.daily_summary_file, "w") as f:
-                    f.write(today)
+                # Guardar estado en BD
+                self.db.set_state("scheduler", "last_summary_date", today)
                 logger.info("✅ Resumen diario estratégico enviado")
 
         except Exception as e:

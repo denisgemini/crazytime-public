@@ -78,7 +78,7 @@ class DataCollector:
                     ct_flapper_yellow = flapper.get("right", {}).get("bonusMultiplier")
             return {
                 "resultado": wheel_result,
-                "timestamp": settled_at,
+                "settled_at": settled_at,
                 "started_at": started_at,
                 "top_slot_result": top_slot.get("wheelSector", ""),
                 "top_slot_multiplier": top_slot.get("multiplier"),

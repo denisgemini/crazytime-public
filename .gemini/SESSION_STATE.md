@@ -1,11 +1,11 @@
 # PUNTO DE CONTROL DE SESIÓN
 
 - **Fecha:** Miércoles 28 Enero 2026
-- **Hora de Cierre:** 23:55 (Perú)
-- **Estado:** v2.5 Consolidada - Sistema de Alertas y Reportes FINALIZADO.
+- **Hora de Cierre:** 23:59 (Perú)
+- **Estado:** v2.6 Estable - Arquitectura "System State" en Producción.
 - **Logros Sesión:**
-    - Alertas de Telegram reparadas (Tokens unificados).
-    - Migración total de alertas a IDs reales.
-    - Implementación de 'Resumen Diario Estratégico' (Ventanas puras, sin umbrales).
-    - Refactorización de `window_analyzer.py` para lógica estricta de ventanas.
-- **Próxima Tarea:** Iniciar fase de desarrollo de 'Caché de Día' (Buffer RAM/JSON) para llamadas de 1 minuto.
+    - **Persistencia Robusta:** Se implementó la tabla `system_state` en SQLite.
+    - **Migración Total:** Tracker, Alertas y Scheduler ahora guardan su estado en la BD, eliminando archivos JSON volátiles.
+    - **Reporte Diario:** Lógica estricta de ventanas implementada y verificada.
+    - **Correcciones:** Limpieza de `collector.py` (terminología de timestamp) y corrección de bugs en Scheduler.
+- **Pendiente:** Desarrollo de 'Caché de Día' para consultas de 1 minuto (Next Step).

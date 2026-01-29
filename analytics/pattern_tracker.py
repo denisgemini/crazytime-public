@@ -31,17 +31,30 @@ class PatternTracker:
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db = Database(db_path)
         self.data_dir = "data/distances"
-        self.state_file = "data/.tracker_state.json"
+        # self.state_file = "data/.tracker_state.json"  <-- DEPRECATED
         os.makedirs(self.data_dir, exist_ok=True)
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
-        if os.path.exists(self.state_file):
+        # Intentar cargar desde BD
+        state = self.db.get_state("pattern_tracker", "main_state")
+        if state:
+            return state
+            
+        # Fallback: Migración de archivo antiguo si existe (para no perder datos hoy)
+        legacy_file = "data/.tracker_state.json"
+        if os.path.exists(legacy_file):
             try:
-                with open(self.state_file, "r") as f:
-                    return json.load(f)
+                logger.info("📦 Migrando estado de Tracker desde JSON a DB...")
+                with open(legacy_file, "r") as f:
+                    state = json.load(f)
+                # Guardar en BD inmediatamente
+                self.db.set_state("pattern_tracker", "main_state", state)
+                return state
             except Exception as e:
-                logger.error(f"Error cargando estado del tracker: {e}")
+                logger.error(f"Error migrando estado: {e}")
+
+        # Estado inicial por defecto
         return {
             "last_processed_id": 0,
             "last_result": None,
@@ -52,12 +65,7 @@ class PatternTracker:
         }
 
     def _save_state(self):
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, "w") as f:
-                json.dump(self.state, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error guardando estado del tracker: {e}")
+        self.db.set_state("pattern_tracker", "main_state", self.state)
 
     def process_new_spins(self) -> int:
         last_id = self.state.get("last_processed_id", 0)

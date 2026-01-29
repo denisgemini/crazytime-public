@@ -34,16 +34,28 @@ class AlertManager:
 
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db = Database(db_path)
-        self.state_file = "data/.alert_state.json"
+        # self.state_file = "data/.alert_state.json" <-- DEPRECATED
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
-        if os.path.exists(self.state_file):
+        # Intentar cargar desde BD
+        state = self.db.get_state("alert_manager", "main_state")
+        if state:
+            return state
+
+        # Fallback: Migración de archivo antiguo si existe
+        legacy_file = "data/.alert_state.json"
+        if os.path.exists(legacy_file):
             try:
-                with open(self.state_file, "r") as f:
-                    return json.load(f)
+                logger.info("📦 Migrando estado de Alertas desde JSON a BD...")
+                with open(legacy_file, "r") as f:
+                    state = json.load(f)
+                self.db.set_state("alert_manager", "main_state", state)
+                return state
             except Exception as e:
-                logger.error(f"Error cargando estado de alertas: {e}")
+                logger.error(f"Error migrando estado de alertas: {e}")
+
+        # Estado inicial por defecto
         state = {}
         for pattern in VIP_PATTERNS:
             state[pattern.id] = {
@@ -58,12 +70,7 @@ class AlertManager:
         return state
 
     def _save_state(self):
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, "w") as f:
-                json.dump(self.state, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error guardando estado de alertas: {e}")
+        self.db.set_state("alert_manager", "main_state", self.state)
 
     def check_all_patterns(self) -> list[Alert]:
         all_alerts = []
