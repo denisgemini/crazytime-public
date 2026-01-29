@@ -43,10 +43,10 @@ class PatternTracker:
             except Exception as e:
                 logger.error(f"Error cargando estado del tracker: {e}")
         return {
-            "last_processed_pseudo_id": 0,
+            "last_processed_id": 0,
             "last_result": None,
             "pattern_states": {
-                pattern.id: {"last_pseudo_id": None, "occurrences_count": 0}
+                pattern.id: {"last_id": None, "occurrences_count": 0}
                 for pattern in ALL_PATTERNS
             }
         }
@@ -60,18 +60,21 @@ class PatternTracker:
             logger.error(f"Error guardando estado del tracker: {e}")
 
     def process_new_spins(self) -> int:
-        last_pseudo_id = self.state.get("last_processed_pseudo_id", 0)
-        new_spins = self.db.get_spins_after_pseudo_id(last_pseudo_id)
+        last_id = self.state.get("last_processed_id", 0)
+        # Usamos get_spins_after_id para garantizar inmutabilidad
+        new_spins = self.db.get_spins_after_id(last_id)
         if not new_spins:
             return 0
-        logger.info(f"📊 Tracker: Procesando {len(new_spins)} tiros nuevos (Pseudo IDs)")
+        logger.info(f"📊 Tracker: Procesando {len(new_spins)} tiros nuevos (IDs reales)")
         for spin in new_spins:
             self._process_spin(spin)
+        
+        # Actualizar último ID procesado al final del lote
+        self.state["last_processed_id"] = new_spins[-1]["id"]
         self._save_state()
         return len(new_spins)
 
     def _process_spin(self, spin: dict):
-        spin_id = spin["id"] # Ahora es el pseudo_id gracias a get_spins_after_pseudo_id
         resultado = spin["resultado"]
         for pattern in ALL_PATTERNS:
             if pattern.type == "simple" and resultado == pattern.value:
@@ -82,34 +85,29 @@ class PatternTracker:
                     step1, step2 = pattern.value
                     if self.state["last_result"] == step1 and resultado == step2:
                         self._record_occurrence(pattern, spin)
-        self.state["last_processed_pseudo_id"] = spin_id
         self.state["last_result"] = resultado
 
     def _record_occurrence(self, pattern: Pattern, spin: dict):
-        current_pseudo_id = spin["id"]
+        current_id = spin["id"]
         pattern_state = self.state["pattern_states"][pattern.id]
-        last_pseudo_id = pattern_state.get("last_pseudo_id")
+        last_id = pattern_state.get("last_id")
         
-        # Retrocompatibilidad: si no hay last_pseudo_id pero hay last_id
-        if last_pseudo_id is None and "last_id" in pattern_state:
-            last_pseudo_id = pattern_state["last_id"]
-
-        # Calcular distancia: Resta directa de Pseudo IDs (Perfección cronológica)
-        if last_pseudo_id is not None:
-            distance = current_pseudo_id - last_pseudo_id
-            logger.info(f"✅ [{pattern.name}] Aparición en Pseudo ID {current_pseudo_id} (distancia: {distance})")
+        # Calcular distancia basada en el ID real
+        if last_id is not None:
+            distance = current_id - last_id
+            logger.info(f"✅ [{pattern.name}] Aparición en ID {current_id} (distancia: {distance})")
         else:
-            logger.info(f"⚪ [{pattern.name}] Primera aparición en Pseudo ID {current_pseudo_id} (calibrando)")
+            logger.info(f"⚪ [{pattern.name}] Primera aparición en ID {current_id} (calibrando)")
             distance = None
 
         occurrence = PatternOccurrence(
-            spin_id=current_pseudo_id,
+            spin_id=current_id,
             timestamp=spin["timestamp"],
             distance_from_previous=distance,
             details=self._extract_details(pattern, spin)
         )
         self._save_occurrence(pattern, occurrence)
-        pattern_state["last_pseudo_id"] = current_pseudo_id
+        pattern_state["last_id"] = current_id
         pattern_state["occurrences_count"] += 1
 
     def _extract_details(self, pattern: Pattern, spin: dict) -> dict:
@@ -139,9 +137,11 @@ class PatternTracker:
                 "distances": [],
                 "statistics": {}
             }
+        
         data["occurrences"].append(asdict(occurrence))
         if occurrence.distance_from_previous is not None:
             data["distances"].append(occurrence.distance_from_previous)
+        
         if data["distances"]:
             import statistics
             data["statistics"] = {

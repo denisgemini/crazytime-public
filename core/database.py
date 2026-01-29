@@ -244,73 +244,30 @@ class Database:
             logger.error(f"Error obteniendo tiros después de {after_id}: {e}")
             return []
 
-    def get_spins_after_pseudo_id(self, after_pseudo_id: int, limit: Optional[int] = None) -> list[dict]:
-        try:
-            conn = self.get_connection(read_only=True)
-            cur = conn.cursor()
-            
-            # Usar pseudo_id como id para mantener compatibilidad en el dict
-            query = """
-                SELECT pseudo_id as id, resultado, timestamp, settled_at, latido, 
-                       top_slot_result, top_slot_multiplier, is_top_slot_matched,
-                       bonus_multiplier, ct_flapper_blue, ct_flapper_green, ct_flapper_yellow
-                FROM tiros_ordenados 
-                WHERE pseudo_id > ? 
-                ORDER BY pseudo_id ASC
-            """
-            
-            if limit:
-                cur.execute(query + " LIMIT ?", (after_pseudo_id, limit))
-            else:
-                cur.execute(query, (after_pseudo_id,))
-
-            rows = cur.fetchall()
-            conn.close()
-            return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error obteniendo tiros después de pseudo_id {after_pseudo_id}: {e}")
-            return []
+    def get_spins_after_pseudo_id(self, after_id: int, limit: Optional[int] = None) -> list[dict]:
+        """Alias mantenido por compatibilidad, pero ahora usa IDs reales"""
+        return self.get_spins_after_id(after_id, limit)
 
     def get_last_pattern_pseudo_id(self, value: str) -> Optional[int]:
-        """Obtiene el último pseudo_id de un patrón específico"""
+        """Obtiene el último ID real de un patrón específico"""
         try:
             conn = self.get_connection(read_only=True)
             cur = conn.cursor()
-            cur.execute("SELECT MAX(pseudo_id) FROM tiros_ordenados WHERE resultado = ?", (value,))
+            cur.execute("SELECT MAX(id) FROM tiros WHERE resultado = ?", (value,))
             result = cur.fetchone()[0]
             conn.close()
             return result
         except Exception as e:
-            logger.error(f"Error obteniendo último pseudo_id de {value}: {e}")
+            logger.error(f"Error obteniendo último ID de {value}: {e}")
             return None
 
     def get_max_pseudo_id(self) -> Optional[int]:
-        """Obtiene el pseudo_id más alto actual"""
-        try:
-            conn = self.get_connection(read_only=True)
-            cur = conn.cursor()
-            cur.execute("SELECT MAX(pseudo_id) FROM tiros_ordenados")
-            result = cur.fetchone()[0]
-            conn.close()
-            return result
-        except Exception as e:
-            logger.error(f"Error obteniendo max pseudo_id: {e}")
-            return None
+        """Obtiene el ID más alto actual de la tabla tiros"""
+        return self.get_max_id()
 
-    def get_spin_by_pseudo_id(self, pseudo_id: int) -> Optional[dict]:
-        """Obtiene un tiro completo por su pseudo_id"""
-        try:
-            conn = self.get_connection(read_only=True)
-            cur = conn.cursor()
-            cur.execute("SELECT pseudo_id as id, * FROM tiros_ordenados WHERE pseudo_id = ?", (pseudo_id,))
-            row = cur.fetchone()
-            conn.close()
-            if row:
-                return dict(row)
-            return None
-        except Exception as e:
-            logger.error(f"Error obteniendo tiro por pseudo_id {pseudo_id}: {e}")
-            return None
+    def get_spin_by_pseudo_id(self, spin_id: int) -> Optional[dict]:
+        """Obtiene un tiro completo por su ID real"""
+        return self.get_spin_by_id(spin_id)
 
     def get_last_spin(self) -> Optional[dict]:
         try:
@@ -333,11 +290,11 @@ class Database:
                 fecha = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m-%d")
             conn = self.get_connection(read_only=True)
             cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM tiros_ordenados WHERE DATE(timestamp) = ?", (fecha,))
+            cur.execute("SELECT COUNT(*) FROM tiros WHERE DATE(timestamp) = ?", (fecha,))
             total_spins = cur.fetchone()[0]
             cur.execute("""
                 SELECT resultado, COUNT(*)
-                FROM tiros_ordenados
+                FROM tiros
                 WHERE DATE(timestamp) = ?
                 GROUP BY resultado
             """, (fecha,))

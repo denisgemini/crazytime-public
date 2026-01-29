@@ -29,19 +29,19 @@ CRAZYTIME = Pattern(
 
 NUMERO_10 = Pattern(
     id="numero_10", name="Número 10", type="simple", value="10",
-    thresholds=[], alert_level="tracking",
+    thresholds=[50], alert_level="tracking",
     description="Número regular, solo tracking histórico"
 )
 
 SECUENCIA_2_5 = Pattern(
     id="seq_2_5", name="Secuencia 2→5", type="sequence", value=["2", "5"],
-    thresholds=[], alert_level="tracking",
+    thresholds=[50], alert_level="tracking",
     description="Secuencia de dos números consecutivos"
 )
 
 SECUENCIA_5_2 = Pattern(
     id="seq_5_2", name="Secuencia 5→2", type="sequence", value=["5", "2"],
-    thresholds=[], alert_level="tracking",
+    thresholds=[50], alert_level="tracking",
     description="Secuencia de dos números consecutivos"
 )
 

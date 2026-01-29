@@ -1,5 +1,5 @@
 """
-Dashboard Backend - FastAPI Server for CrazyTime v2 Dashboard (CLEAN)
+Dashboard Backend - FastAPI Server for CrazyTime v2.5 Dashboard (CLEAN)
 Provides REST API endpoints for the interactive dashboard
 """
 
@@ -11,6 +11,33 @@ from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 import json
 import sqlite3
+import logging
+
+# --- Configuración de Logging para Diagnóstico ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("dashboard_init")
+logger.info("🚀 Iniciando proceso de arranque del Dashboard v2.5...")
+
+# --- Configuración de Rutas de Sistema (Debe ir antes de las importaciones locales) ---
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+logger.info(f"📂 ROOT_DIR configurado en: {ROOT_DIR}")
+
+# Configuración de rutas de datos
+BASE_DATA_PATH = ROOT_DIR / "data"
+BASE_CONFIG_PATH = ROOT_DIR / "config"
+DB_PATH = BASE_DATA_PATH / "db.sqlite3"
+TRACKER_STATE_PATH = BASE_DATA_PATH / ".tracker_state.json"
+ALERT_STATE_PATH = BASE_DATA_PATH / ".alert_state.json"
+DISTANCES_DIR = BASE_DATA_PATH / "distances"
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,41 +47,24 @@ from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from pydantic import BaseModel, Field
 
-# CrazyTime core imports
+# Importaciones locales de CrazyTime (ahora que el path está configurado)
+logger.info("📦 Cargando módulos core y config...")
 from core.database import Database
 from config.patterns import ALL_PATTERNS
 
-# Initialize global DB handler
+# Inicializar manejador de base de datos global
+logger.info(f"🗄️ Inicializando conexión a base de datos en: {DB_PATH}")
 db = Database(str(DB_PATH))
-
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Base directory
-BASE_DIR = Path(__file__).resolve().parent
-
-# Base path configuration
-BASE_DATA_PATH = Path(BASE_DIR.parent / "data")
-BASE_CONFIG_PATH = Path(BASE_DIR.parent / "config")
-
-# Database and state paths
-DB_PATH = BASE_DATA_PATH / "db.sqlite3"
-TRACKER_STATE_PATH = BASE_DATA_PATH / ".tracker_state.json"
-ALERT_STATE_PATH = BASE_DATA_PATH / ".alert_state.json"
-DISTANCES_DIR = BASE_DATA_PATH / "distances"
+logger.info("✅ Base de datos inicializada correctamente")
 
 # --------------------------------------------------
 # FastAPI app
 # --------------------------------------------------
 
 app = FastAPI(
-    title="CrazyTime v2 Dashboard API",
-    description="REST API for CrazyTime v2 interactive dashboard",
-    version="1.0.0"
+    title="CrazyTime v2.5 Dashboard API",
+    description="REST API for CrazyTime v2.5 interactive dashboard",
+    version="2.5.0"
 )
 
 # CORS
@@ -203,9 +213,8 @@ async def get_status():
         # Obtener estadísticas del día usando el método oficial
         stats_dia = db.obtener_estadisticas_dia()
         
-        # Obtener último tiro usando la vista ordenada (limit 1)
-        last_spin = db.get_spins_after_pseudo_id(0, limit=1)
-        last_spin = last_spin[0] if last_spin else None
+        # Obtener último tiro real
+        last_spin = db.get_last_spin()
         
         current_id = last_spin['id'] if last_spin else 0
         print(f"   Current ID: {current_id}")
@@ -271,7 +280,7 @@ async def get_alerts():
 async def get_recent_spins(limit: int = Query(default=20, ge=1, le=100)):
     with get_db_connection() as conn:
         spins = conn.execute(
-            "SELECT pseudo_id as id, resultado, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT ?",
+            "SELECT id, resultado, timestamp FROM tiros ORDER BY id DESC LIMIT ?",
             (limit,)
         ).fetchall()
         return RecentSpinsResponse(
@@ -286,7 +295,7 @@ async def get_spins_stats():
         # Distribución de los últimos 1000 tiros
         stats_query = conn.execute(
             """SELECT resultado, COUNT(*) as count
-               FROM (SELECT resultado FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1000)
+               FROM (SELECT resultado FROM tiros ORDER BY id DESC LIMIT 1000)
                GROUP BY resultado"""
         ).fetchall()
 
@@ -304,13 +313,13 @@ async def get_spins_stats():
                 continue
 
         last_spin = conn.execute(
-            "SELECT pseudo_id as id, timestamp FROM tiros_ordenados ORDER BY pseudo_id DESC LIMIT 1"
+            "SELECT id, timestamp FROM tiros ORDER BY id DESC LIMIT 1"
         ).fetchone()
 
         # Conteo de hoy para el header
         today = datetime.now().strftime("%Y-%m-%d")
         today_count = conn.execute(
-            "SELECT COUNT(*) as count FROM tiros_ordenados WHERE timestamp LIKE ?",
+            "SELECT COUNT(*) as count FROM tiros WHERE timestamp LIKE ?",
             (f"{today}%",)
         ).fetchone()
 

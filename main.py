@@ -1,5 +1,5 @@
 """
-main.py - Servicio persistente CrazyTime v2.0
+main.py - Servicio persistente CrazyTime v2.5
 
 Ejecuta bucle infinito consultando API cada 3 minutos.
 Diseñado para correr 24/7 en instancia GCP free tier.
@@ -28,10 +28,10 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     logger.info("\n" + "="*70)
-    logger.info("🚀 CRAZYTIME SERVICE v2.0 - INICIANDO")
+    logger.info("🚀 CRAZYTIME SERVICE v2.5 - INICIANDO")
     logger.info("="*70)
     logger.info("Modo: Servicio persistente 24/7")
-    logger.info("Intervalo: 3 minutos")
+    logger.info("Intervalo: 5 minutos")
     logger.info("Plataforma: Google Cloud Platform Free Tier")
     logger.info("="*70 + "\n")
     try:
@@ -54,8 +54,8 @@ def main():
             logger.info(f"{'='*70}")
             scheduler.run()
             if not shutdown_flag:
-                logger.info(f"\n⏳ Esperando 3 minutos hasta próximo ciclo...")
-                for i in range(180):
+                logger.info(f"\n⏳ Esperando 5 minutos hasta próximo ciclo...")
+                for i in range(300):
                     if shutdown_flag:
                         break
                     time.sleep(1)

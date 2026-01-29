@@ -1,58 +1,83 @@
+"""
+scripts/analyze_latidos.py - Auditoría de latidos con visibilidad de cortes de Android.
+Categorías: 0-4s, 5s, 6-11s, >11s (Gaps) y Negativos.
+Muestra los cortes más largos detectados.
+"""
 
 import sqlite3
+import os
 from datetime import datetime
-from collections import Counter
+from pathlib import Path
 
 def analyze():
-    conn = sqlite3.connect('data/db.sqlite3')
+    root_dir = Path(__file__).resolve().parent.parent
+    db_path = root_dir / "data" / "db.sqlite3"
+    
+    if not db_path.exists():
+        print(f"❌ No se encuentra la base de datos en {db_path}")
+        return
+
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    
-    # Traemos todos los tiros ordenados por ID
-    cur.execute("SELECT id, resultado, timestamp, started_at FROM tiros ORDER BY id ASC")
-    rows = cur.fetchall()
-    
-    latidos = []
-    last_timestamp = None
-    
-    for row in rows:
-        current_started = row['started_at']
-        
-        if last_timestamp and current_started:
-            try:
-                # Calculamos el latido: started_at actual - timestamp anterior
-                t1 = datetime.fromisoformat(last_timestamp)
-                t2 = datetime.fromisoformat(current_started)
-                diff = int((t2 - t1).total_seconds())
-                latidos.append(diff)
-            except Exception:
-                pass
-        
-        last_timestamp = row['timestamp']
-    
-    conn.close()
-    
-    print(f"{'ID':>5} | {'Resultado':>12} | {'Started At':>20} | {'Prev Timestamp':>20} | {'Latido':>8}")
-    print("-" * 75)
-    
-    for i in range(1, len(rows)):
-        current = rows[i]
-        prev = rows[i-1]
-        
-        if current['started_at'] and prev['timestamp']:
-            try:
-                t1 = datetime.fromisoformat(prev['timestamp'])
-                t2 = datetime.fromisoformat(current['started_at'])
-                diff = int((t2 - t1).total_seconds())
-                
-                if diff < 0:
-                    print(f"{current['id']:>5} | {current['resultado']:>12} | {current['started_at']:>20} | {prev['timestamp']:>20} | {diff:>8}")
-                    # También mostramos el anterior para comparar
-                    print(f"{prev['id']:>5} | {prev['resultado']:>12} | {prev['started_at']:>20} | {prev['timestamp']:>20} | (ANTERIOR)")
-                    print("-" * 75)
-            except Exception:
-                pass
 
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    def get_data(where_clause="", params=()):
+        cur.execute(f"SELECT id, latido, timestamp, resultado FROM tiros {where_clause} ORDER BY id DESC", params)
+        return [dict(r) for r in cur.fetchall()]
+
+    rows_today = get_data("WHERE timestamp LIKE ?", (f"{today}%",))
+    rows_total = get_data()
+    conn.close()
+
+    def process_stats(rows):
+        if not rows: return None
+        s = {"0_4": 0, "5": 0, "6_11": 0, "gt11": 0, "neg": 0, "total": len(rows), "top_gaps": []}
+        for r in rows:
+            l = r['latido']
+            if l < 0: s["neg"] += 1
+            elif 0 <= l <= 4: s["0_4"] += 1
+            elif l == 5: s["5"] += 1
+            elif 6 <= l <= 11: s["6_11"] += 1
+            else: s["gt11"] += 1
+        
+        # Obtener los 5 mayores gaps
+        s["top_gaps"] = sorted(rows, key=lambda x: x['latido'], reverse=True)[:5]
+        return s
+
+    stats_today = process_stats(rows_today)
+    stats_total = process_stats(rows_total)
+
+    def print_report(s, title):
+        print(f"\n📊 {title}")
+        print("="*55)
+        print(f" {'CATEGORÍA':<20} | {'CONTEO':>8} | {'PORCENTAJE':>10}")
+        print("-" * 55)
+        total = s["total"]
+        print(f" 0 a 4 SEGUNDOS      | {s['0_4']:>8} | {(s['0_4']/total)*100:>9.1f}%")
+        print(f" 5 SEGUNDOS          | {s['5']:>8} | {(s['5']/total)*100:>9.1f}%")
+        print(f" 6 a 11 SEGUNDOS     | {s['6_11']:>8} | {(s['6_11']/total)*100:>9.1f}%")
+        print(f" MAYORES A 11s (Gaps)| {s['gt11']:>8} | {(s['gt11']/total)*100:>9.1f}%")
+        print(f" NEGATIVOS           | {s['neg']:>8} | {(s['neg']/total)*100:>9.1f}%")
+        print("-" * 55)
+        
+        print(" 🕒 TOP 5 MAYORES CORTES (GAPS) DETECTADOS:")
+        for i, g in enumerate(s["top_gaps"], 1):
+            if g['latido'] > 11:
+                h = g['latido'] // 3600
+                m = (g['latido'] % 3600) // 60
+                s_rem = g['latido'] % 60
+                duration = f"{h}h {m}m {s_rem}s" if h > 0 else f"{m}m {s_rem}s"
+                print(f"  {i}. {duration:<12} | ID {g['id']:<5} | {g['timestamp']}")
+        
+        print("="*55)
+
+    if stats_today:
+        print_report(stats_today, f"ESTADO DE HOY ({today})")
+    
+    if stats_total:
+        print_report(stats_total, "RESUMEN HISTÓRICO TOTAL")
 
 if __name__ == "__main__":
     analyze()
