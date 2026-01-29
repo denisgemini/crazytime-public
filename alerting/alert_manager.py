@@ -74,31 +74,31 @@ class AlertManager:
 
     def check_pattern(self, pattern: Pattern) -> list[Alert]:
         alerts = []
-        # 1. Obtener última aparición por Pseudo ID
-        last_pseudo_id = self.db.get_last_pattern_pseudo_id(pattern.value)
-        if last_pseudo_id is None:
+        # 1. Obtener última aparición por ID Real
+        last_real_id = self.db.get_last_occurrence_id(pattern.value)
+        if last_real_id is None:
             return alerts
             
         pattern_state = self.state[pattern.id]
         if pattern_state.get("last_seen_id") is None:
-            logger.info(f"⚪ [{pattern.name}] Primera aparición detectada (calibrando Pseudo ID {last_pseudo_id})")
-            pattern_state["last_seen_id"] = last_pseudo_id
+            logger.info(f"⚪ [{pattern.name}] Primera aparición detectada (calibrando ID Real {last_real_id})")
+            pattern_state["last_seen_id"] = last_real_id
             self._save_state()
             return alerts
 
-        # 2. Calcular espera actual usando Pseudo IDs
-        max_pseudo_id = self.db.get_max_pseudo_id()
-        current_wait = max_pseudo_id - last_pseudo_id
+        # 2. Calcular espera actual usando IDs Reales
+        max_id = self.db.get_max_id()
+        current_wait = max_id - last_real_id
 
         # 3. Detectar si el patrón acaba de salir
-        if last_pseudo_id != pattern_state["last_seen_id"]:
-            logger.info(f"🎉 [{pattern.name}] Salió en Pseudo ID {last_pseudo_id} (espera: {current_wait})")
+        if last_real_id != pattern_state["last_seen_id"]:
+            logger.info(f"🎉 [{pattern.name}] Salió en ID Real {last_real_id} (espera: {current_wait})")
             for threshold in pattern.thresholds:
                 threshold_key = str(threshold)
                 threshold_state = pattern_state["thresholds"][threshold_key]
                 if threshold_state["status"] == "alerted":
-                    # Usar pseudo_id para obtener detalles
-                    details = self._get_hit_details(pattern, last_pseudo_id)
+                    # Usar ID real para obtener detalles
+                    details = self._get_hit_details(pattern, last_real_id)
                     alerts.append(Alert(
                         type=AlertType.PATTERN_HIT,
                         pattern_id=pattern.id,
@@ -112,7 +112,7 @@ class AlertManager:
                     threshold_state["status"] = "idle"
                     threshold_state["last_alert_time"] = datetime.now().isoformat()
 
-            pattern_state["last_seen_id"] = last_pseudo_id
+            pattern_state["last_seen_id"] = last_real_id
             self._save_state()
             return alerts
 
@@ -137,8 +137,8 @@ class AlertManager:
         self._save_state()
         return alerts
 
-    def _get_hit_details(self, pattern: Pattern, pseudo_id: int) -> dict:
-        spin_data = self.db.get_spin_by_pseudo_id(pseudo_id)
+    def _get_hit_details(self, pattern: Pattern, spin_id: int) -> dict:
+        spin_data = self.db.get_spin_by_id(spin_id)
         if not spin_data:
             return {}
         details = {

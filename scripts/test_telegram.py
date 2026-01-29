@@ -6,7 +6,7 @@ from telegram import Bot
 
 async def test_bot():
     load_dotenv()
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
     if not token or not chat_id:

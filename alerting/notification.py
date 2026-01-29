@@ -58,7 +58,7 @@ class TelegramNotifier:
 🕐 <b>Hora:</b> {hora}
 """
         imagen = self._get_image_path(alert.pattern_id)
-        return self._send_message(mensaje.strip(), imagen_path=imagen)
+        return self.send_message(mensaje.strip(), imagen_path=imagen)
 
     def send_hit_alert(self, alert: Alert) -> bool:
         details = alert.details
@@ -89,7 +89,7 @@ class TelegramNotifier:
                 mensaje += f"🎁 <b>Top Slot Match:</b> x{ts}\n"
         mensaje += f"\n🕐 <b>Hora:</b> {hora_juego}\n"
         imagen = self._get_image_path(alert.pattern_id)
-        return self._send_message(mensaje.strip(), imagen_path=imagen)
+        return self.send_message(mensaje.strip(), imagen_path=imagen)
 
     def send_message(self, mensaje: str, imagen_path: str = None, parse_mode: str = "HTML") -> bool:
         try:

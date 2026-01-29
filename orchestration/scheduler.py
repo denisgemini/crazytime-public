@@ -27,7 +27,7 @@ class CrazyTimeScheduler:
         self.collector = DataCollector("data/db.sqlite3")
         self.tracker = PatternTracker("data/db.sqlite3")
         self.alert_manager = AlertManager("data/db.sqlite3")
-        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        token = os.getenv("TELEGRAM_TOKEN")
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
         if not token or not chat_id:
             logger.warning("⚠️ Credenciales de Telegram no configuradas")
