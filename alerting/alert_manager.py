@@ -1,5 +1,6 @@
 """
-alerting/alert_manager.py - Gestión de alertas para patrones VIP.
+alerting/alert_manager.py - Gestión de alertas INDEPENDIENTES.
+Se sincroniza con PatternTracker para obtener distancias oficiales.
 """
 
 import os
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from config.patterns import Pattern, VIP_PATTERNS
+from config.patterns import Pattern, VIP_PATTERNS, get_window_range
 from core.database import Database
 
 logger = logging.getLogger(__name__)
@@ -25,48 +26,29 @@ class Alert:
     pattern_id: str
     pattern_name: str
     threshold: int
-    spin_count: int
+    spin_count: int 
     timestamp: datetime
     details: dict
 
 class AlertManager:
-    """Gestor de alertas para patrones VIP."""
+    """Gestor de alertas alineado con PatternTracker."""
 
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db = Database(db_path)
-        # self.state_file = "data/.alert_state.json" <-- DEPRECATED
+        self.distances_dir = "data/distances"
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
-        # Intentar cargar desde BD
         state = self.db.get_state("alert_manager", "main_state")
         if state:
             return state
-
-        # Fallback: Migración de archivo antiguo si existe
-        legacy_file = "data/.alert_state.json"
-        if os.path.exists(legacy_file):
-            try:
-                logger.info("📦 Migrando estado de Alertas desde JSON a BD...")
-                with open(legacy_file, "r") as f:
-                    state = json.load(f)
-                self.db.set_state("alert_manager", "main_state", state)
-                return state
-            except Exception as e:
-                logger.error(f"Error migrando estado de alertas: {e}")
-
-        # Estado inicial por defecto
+        
         state = {}
         for pattern in VIP_PATTERNS:
             state[pattern.id] = {
-                "last_seen_id": None,
-                "thresholds": {}
+                "last_processed_id": 0,
+                "threshold_alerts": {}
             }
-            for threshold in pattern.thresholds:
-                state[pattern.id]["thresholds"][str(threshold)] = {
-                    "status": "idle",
-                    "last_alert_time": None
-                }
         return state
 
     def _save_state(self):
@@ -74,60 +56,67 @@ class AlertManager:
 
     def check_all_patterns(self) -> list[Alert]:
         all_alerts = []
+        current_max_id = self.db.get_max_id()
+        if not current_max_id:
+            return []
+
         for pattern in VIP_PATTERNS:
-            alerts = self.check_pattern(pattern)
+            alerts = self.check_pattern(pattern, current_max_id)
             all_alerts.extend(alerts)
+        
+        self._save_state()
         return all_alerts
 
-    def check_pattern(self, pattern: Pattern) -> list[Alert]:
+    def check_pattern(self, pattern: Pattern, current_max_id: int) -> list[Alert]:
         alerts = []
-        # 1. Obtener última aparición por ID Real
-        last_real_id = self.db.get_last_occurrence_id(pattern.value)
-        if last_real_id is None:
-            return alerts
+        p_state = self.state.setdefault(pattern.id, {"last_processed_id": 0, "threshold_alerts": {}})
+        
+        # 1. Obtener última aparición real conocida en BD
+        last_occurrence_id = self.db.get_last_occurrence_id(pattern.value)
+        if last_occurrence_id is None:
+            return []
+
+        # Si es la primera vez, sincronizamos
+        if p_state["last_processed_id"] == 0:
+            p_state["last_processed_id"] = current_max_id
+            return []
+
+        # --- LÓGICA 1: DETECCIÓN DE SALIDA (WIN) ---
+        if last_occurrence_id > p_state["last_processed_id"]:
+            # ¡Salió el patrón! Buscamos la distancia oficial en el JSON del Tracker
+            official_distance = self._get_official_distance(pattern.id, last_occurrence_id)
             
-        pattern_state = self.state[pattern.id]
-        if pattern_state.get("last_seen_id") is None:
-            logger.info(f"⚪ [{pattern.name}] Primera aparición detectada (calibrando ID Real {last_real_id})")
-            pattern_state["last_seen_id"] = last_real_id
-            self._save_state()
+            if official_distance is not None:
+                # Evaluamos ventanas
+                for threshold in pattern.thresholds:
+                    w_start, w_end = get_window_range(threshold)
+                    
+                    # Lógica Estricta: Solo alertar si cayó DENTRO de la ventana
+                    if w_start <= official_distance <= w_end:
+                        details = self._get_hit_details(pattern, last_occurrence_id)
+                        alerts.append(Alert(
+                            type=AlertType.PATTERN_HIT,
+                            pattern_id=pattern.id,
+                            pattern_name=pattern.name,
+                            threshold=threshold,
+                            spin_count=official_distance, # Distancia REAL del Tracker
+                            timestamp=datetime.now(),
+                            details=details
+                        ))
+                        logger.info(f"🎉 [{pattern.name}] WIN en Ventana [{w_start}-{w_end}] (Distancia Oficial: {official_distance})")
+
+            # Actualizamos puntero y reseteamos avisos
+            p_state["last_processed_id"] = current_max_id
+            p_state["threshold_alerts"] = {} 
             return alerts
 
-        # 2. Calcular espera actual usando IDs Reales
-        max_id = self.db.get_max_id()
-        current_wait = max_id - last_real_id
-
-        # 3. Detectar si el patrón acaba de salir
-        if last_real_id != pattern_state["last_seen_id"]:
-            logger.info(f"🎉 [{pattern.name}] Salió en ID Real {last_real_id} (espera: {current_wait})")
-            for threshold in pattern.thresholds:
-                threshold_key = str(threshold)
-                threshold_state = pattern_state["thresholds"][threshold_key]
-                if threshold_state["status"] == "alerted":
-                    # Usar ID real para obtener detalles
-                    details = self._get_hit_details(pattern, last_real_id)
-                    alerts.append(Alert(
-                        type=AlertType.PATTERN_HIT,
-                        pattern_id=pattern.id,
-                        pattern_name=pattern.name,
-                        threshold=threshold,
-                        spin_count=current_wait,
-                        timestamp=datetime.now(),
-                        details=details
-                    ))
-                    logger.info(f"📤 [{pattern.name}] Alerta SALIDA (umbral {threshold}, salió en {current_wait})")
-                    threshold_state["status"] = "idle"
-                    threshold_state["last_alert_time"] = datetime.now().isoformat()
-
-            pattern_state["last_seen_id"] = last_real_id
-            self._save_state()
-            return alerts
-
-        # 4. Verificar si se alcanzó un umbral
+        # --- LÓGICA 2: AVISO DE UMBRAL (WARNING) ---
+        current_wait = current_max_id - last_occurrence_id
+        
         for threshold in pattern.thresholds:
             threshold_key = str(threshold)
-            threshold_state = pattern_state["thresholds"][threshold_key]
-            if current_wait >= threshold and threshold_state["status"] == "idle":
+            
+            if current_wait >= threshold and not p_state["threshold_alerts"].get(threshold_key):
                 alerts.append(Alert(
                     type=AlertType.THRESHOLD_REACHED,
                     pattern_id=pattern.id,
@@ -137,12 +126,32 @@ class AlertManager:
                     timestamp=datetime.now(),
                     details={}
                 ))
-                logger.info(f"📤 [{pattern.name}] Alerta UMBRAL (umbral {threshold}, actual {current_wait})")
-                threshold_state["status"] = "alerted"
-                threshold_state["last_alert_time"] = datetime.now().isoformat()
+                logger.info(f"🔔 [{pattern.name}] UMBRAL {threshold} ALCANZADO (Espera: {current_wait})")
+                p_state["threshold_alerts"][threshold_key] = True
+
+        # Actualizamos puntero general
+        p_state["last_processed_id"] = current_max_id
         
-        self._save_state()
         return alerts
+
+    def _get_official_distance(self, pattern_id: str, spin_id: int) -> Optional[int]:
+        """Lee el JSON generado por PatternTracker para obtener la distancia oficial."""
+        filepath = os.path.join(self.distances_dir, f"{pattern_id}.json")
+        if not os.path.exists(filepath):
+            return None
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+            # Buscar la ocurrencia específica
+            # Como se agregan al final, buscamos desde el último
+            for occ in reversed(data.get("occurrences", [])):
+                if occ["spin_id"] == spin_id:
+                    return occ["distance_from_previous"]
+                if occ["spin_id"] < spin_id: # Ya nos pasamos
+                    break
+        except Exception as e:
+            logger.error(f"Error leyendo distancia oficial: {e}")
+        return None
 
     def _get_hit_details(self, pattern: Pattern, spin_id: int) -> dict:
         spin_data = self.db.get_spin_by_id(spin_id)
@@ -165,10 +174,5 @@ class AlertManager:
         return details
 
     def reset_states(self):
-        logger.warning("🔄 RESET: Reseteando estados de alertas")
-        for pattern_id in self.state:
-            self.state[pattern_id]["last_seen_id"] = None
-            for threshold_key in self.state[pattern_id]["thresholds"]:
-                self.state[pattern_id]["thresholds"][threshold_key]["status"] = "idle"
+        self.state = {}
         self._save_state()
-        logger.info("✅ Estados de alertas reseteados")

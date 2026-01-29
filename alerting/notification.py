@@ -10,6 +10,7 @@ from typing import Optional
 
 from telegram import Bot
 from telegram.error import TelegramError
+from telegram.request import HTTPXRequest
 
 from alerting.alert_manager import Alert, AlertType
 from config.patterns import get_pattern_image, get_window_range
@@ -17,14 +18,16 @@ from config.patterns import get_pattern_image, get_window_range
 logger = logging.getLogger(__name__)
 
 class TelegramNotifier:
-    """Notificador de Telegram con soporte de imágenes."""
+    """Notificador de Telegram con soporte de imágenes y reintentos."""
 
     def __init__(self, token: str, chat_id: str, assets_dir: str = "assets"):
         self.token = token
         self.chat_id = chat_id
-        self.bot = Bot(token=self.token)
+        # Configurar timeouts robustos (30s) para evitar ReadError
+        request = HTTPXRequest(connect_timeout=30, read_timeout=30)
+        self.bot = Bot(token=self.token, request=request)
         self.assets_dir = assets_dir
-        logger.info("✅ Bot de Telegram inicializado")
+        logger.info("✅ Bot de Telegram inicializado con timeouts robustos")
 
     def send_alert(self, alert: Alert) -> bool:
         if alert.type == AlertType.THRESHOLD_REACHED:
@@ -46,16 +49,16 @@ class TelegramNotifier:
         return None
 
     def send_threshold_alert(self, alert: Alert) -> bool:
-        window_start, window_end = get_window_range(alert.threshold)
         hora = alert.timestamp.strftime("%H:%M:%S")
-        mensaje = f"""🟡 <b>UMBRAL ALCANZADO</b>
+        mensaje = f"""🟡🎰 <b>¡{alert.pattern_name.upper()} ENTRANDO EN CALOR!</b>
 
-📊 <b>Patrón:</b> {alert.pattern_name}
-⏱️ <b>Tiros sin salir:</b> {alert.spin_count}
-🎯 <b>Umbral:</b> {alert.threshold}
+🎯 <b>Umbral {alert.threshold} alcanzado</b>
+🔥 La mesa comienza a activarse…
 
-📍 <b>Ventana de apuesta:</b> tiros {window_start}-{window_end}
-🕐 <b>Hora:</b> {hora}
+👀 Ingresa al casino y mantente atento.
+Aún no es apuesta — la oportunidad se acerca.
+
+🕐 <b>{hora}</b>
 """
         imagen = self._get_image_path(alert.pattern_id)
         return self.send_message(mensaje.strip(), imagen_path=imagen)
@@ -65,18 +68,32 @@ class TelegramNotifier:
         hora_juego = details.get("timestamp", "")
         if "T" in hora_juego:
             hora_juego = hora_juego.split("T")[1][:8]
-        mensaje = f"""🎉 <b>SALIÓ {alert.pattern_name.upper()}</b>
+        
+        mensaje = f"🎉 <b>¡SALIÓ {alert.pattern_name.upper()} EN VENTANA!</b>\n\n"
+        mensaje += f"🎯 <b>Distancia Real:</b> {alert.spin_count} tiros\n"
 
-⏱️ <b>Salió después de:</b> {alert.spin_count} tiros
-🎯 <b>Umbral era:</b> {alert.threshold}
-"""
+        # 1. Detalles de Top Slot (Común para todos)
+        if details.get("top_slot_matched"):
+            ts_res = details.get("resultado")
+            ts_mult = details.get("top_slot_multiplier", 1)
+            mensaje += f"🎁 <b>Top Slot Match:</b> {ts_res} x{ts_mult}\n"
+            
+            # Calcular impacto total si es un premio directo (Pachinko o Número)
+            if alert.pattern_id == "pachinko":
+                bonus = details.get("bonus_multiplier")
+                if bonus:
+                    total = bonus * ts_mult
+                    mensaje += f"🔥 <b>¡IMPACTO TOTAL: {total}x!</b>\n"
+            elif alert.pattern_id == "numero_10":
+                mensaje += f"🔥 <b>¡IMPACTO TOTAL: {10 * ts_mult}x!</b>\n"
+        
+        mensaje += "\n"
+
+        # 2. Detalles Específicos por Patrón
         if alert.pattern_id == "pachinko":
             bonus = details.get("bonus_multiplier", "?")
-            mensaje += f"💰 <b>Pago:</b> {bonus}x\n"
-            if details.get("top_slot_matched"):
-                ts = details.get("top_slot_multiplier", 1)
-                total = bonus * ts if bonus != "?" else "?"
-                mensaje += f"🎁 <b>Top Slot Match:</b> x{ts} ({total}x total)\n"
+            mensaje += f"💰 <b>Pago Pachinko:</b> {bonus}x\n"
+            
         elif alert.pattern_id == "crazytime":
             blue = details.get("flapper_blue", "?")
             green = details.get("flapper_green", "?")
@@ -84,10 +101,9 @@ class TelegramNotifier:
             mensaje += f"🔵 <b>Flapper Azul:</b> {blue}x\n"
             mensaje += f"🟢 <b>Flapper Verde:</b> {green}x\n"
             mensaje += f"🟡 <b>Flapper Amarillo:</b> {yellow}x\n"
-            if details.get("top_slot_matched"):
-                ts = details.get("top_slot_multiplier", 1)
-                mensaje += f"🎁 <b>Top Slot Match:</b> x{ts}\n"
-        mensaje += f"\n🕐 <b>Hora:</b> {hora_juego}\n"
+            
+        mensaje += f"\n🕐 <b>Hora:</b> {hora_juego}"
+        
         imagen = self._get_image_path(alert.pattern_id)
         return self.send_message(mensaje.strip(), imagen_path=imagen)
 
@@ -108,27 +124,35 @@ class TelegramNotifier:
             return False
 
     async def _send_message_async(self, mensaje: str, parse_mode: str, imagen_path: str = None) -> bool:
-        try:
-            if imagen_path and os.path.exists(imagen_path):
-                with open(imagen_path, "rb") as f:
-                    await self.bot.send_photo(
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if imagen_path and os.path.exists(imagen_path):
+                    with open(imagen_path, "rb") as f:
+                        await self.bot.send_photo(
+                            chat_id=self.chat_id,
+                            photo=f,
+                            caption=mensaje,
+                            parse_mode=parse_mode
+                        )
+                    logger.info(f"📤 Foto enviada a Telegram: {imagen_path}")
+                else:
+                    await self.bot.send_message(
                         chat_id=self.chat_id,
-                        photo=f,
-                        caption=mensaje,
+                        text=mensaje,
                         parse_mode=parse_mode
                     )
-                logger.info(f"📤 Foto enviada a Telegram: {imagen_path}")
-            else:
-                await self.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=mensaje,
-                    parse_mode=parse_mode
-                )
-                logger.info(f"📤 Mensaje enviado a Telegram")
-            return True
-        except TelegramError as e:
-            logger.error(f"❌ Error de Telegram: {e}")
-            return False
+                    logger.info(f"📤 Mensaje enviado a Telegram")
+                return True
+            except Exception as e:
+                wait_time = (attempt + 1) * 2
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Intento {attempt + 1} fallido: {e}. Reintentando en {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"❌ Error final de Telegram tras {max_retries} intentos: {e}")
+                    return False
+        return False
 
     def enviar_resumen_diario(self, data: dict) -> bool:
         try:
