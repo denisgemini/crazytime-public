@@ -44,24 +44,39 @@ class CrazyTimeScheduler:
             logger.info("🚀 INICIANDO CICLO DE ACTUALIZACIÓN")
             logger.info("=" * 70)
 
-            # Actualizar datos
-            new_spins = self._update_data()
-            if new_spins == 0:
+            # Obtener lotes (uno o más si hay brecha)
+            batches = self.collector.fetch_batches()
+            
+            if not batches:
                 logger.info("✅ No hay datos nuevos, ciclo completado")
                 self._update_last_run()
                 return
 
-            self._process_tracking()
-            self._process_alerts()
+            total_new_spins = 0
+            
+            # Procesar cada lote de forma secuencial
+            for i, batch in enumerate(batches):
+                if len(batches) > 1:
+                    logger.info(f"🔄 Procesando lote de recuperación {i+1}/{len(batches)}...")
+                
+                # 1. Insertar datos del lote
+                inserted = self.db.insertar_datos(batch)
+                total_new_spins += inserted
+                
+                # 2. Solo si hubo inserciones reales en este lote, procesamos tracking y alertas
+                if inserted > 0:
+                    self._process_tracking()
+                    self._process_alerts()
 
-            # Análisis de ventanas
-            self._run_window_analysis()
-            self._scheduled_tasks()
+            # Análisis de ventanas y tareas programadas (una sola vez al final del superciclo)
+            if total_new_spins > 0:
+                self._run_window_analysis()
+                self._scheduled_tasks()
 
             self._update_last_run()
 
             logger.info("=" * 70)
-            logger.info("✅ CICLO COMPLETADO EXITOSAMENTE")
+            logger.info(f"✅ CICLO COMPLETADO ({total_new_spins} tiros nuevos)")
             logger.info("=" * 70)
         except Exception as e:
             logger.error(f"❌ ERROR CRÍTICO EN CICLO: {e}", exc_info=True)

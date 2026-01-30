@@ -1,5 +1,5 @@
 """
-core/api_client.py - Cliente HTTP para API de CasinoScores.
+core/api_client.py - Cliente HTTP para API de CasinoScores con soporte de paginación.
 """
 
 import time
@@ -12,54 +12,55 @@ logger = logging.getLogger(__name__)
 class APIClient:
     """Cliente HTTP robusto para API de CasinoScores"""
 
-    API_URL = (
-        "https://api.casinoscores.com/svc-evolution-game-events/api/crazytime"
-        "?page=0&size=10&sort=data.settledAt,desc&duration=6"
-        "&wheelResults=Pachinko,CashHunt,CrazyBonus,CoinFlip,1,2,5,10"
-        "&isTopSlotMatched=true,false&tableId=CrazyTime0000001"
-    )
-
-    def __init__(self, max_retries: int = 3, timeout: int = 15):
+    BASE_URL = "https://api.casinoscores.com/svc-evolution-game-events/api/crazytime"
+    
+    def __init__(self, max_retries: int = 5, timeout: int = 15):
         self.max_retries = max_retries
         self.timeout = timeout
 
-    def fetch(self) -> list[dict]:
+    def fetch(self, page: int = 0, size: int = 10) -> list[dict]:
+        # Construcción dinámica de URL
+        url = (
+            f"{self.BASE_URL}"
+            f"?page={page}&size={size}"
+            "&sort=data.settledAt,desc&duration=6"
+            "&wheelResults=Pachinko,CashHunt,CrazyBonus,CoinFlip,1,2,5,10"
+            "&isTopSlotMatched=true,false&tableId=CrazyTime0000001"
+        )
+
         for attempt in range(1, self.max_retries + 1):
             try:
-                logger.debug(f"API request intento {attempt}/{self.max_retries}")
+                # Logger silencioso para intentos normales, ruidoso para reintentos
+                if attempt > 1:
+                    logger.debug(f"API request intento {attempt}/{self.max_retries} (Page {page})")
+                
                 response = requests.get(
-                    self.API_URL,
+                    url,
                     headers=self._get_headers(),
                     timeout=self.timeout
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    logger.info(f"✅ API: {len(data)} registros obtenidos")
+                    # logger.info(f"✅ API (P{page}): {len(data)} registros obtenidos") 
+                    # Comentado para no spamear en modo recursivo
                     return data
                 elif response.status_code == 429:
-                    wait_time = (2 ** attempt) * 2
+                    wait_time = (attempt * 5)
                     logger.warning(f"⚠️ API rate limit (429), esperando {wait_time}s...")
                     time.sleep(wait_time)
                     continue
                 else:
                     logger.error(f"❌ API HTTP {response.status_code}")
                     if attempt < self.max_retries:
-                        time.sleep(2 ** attempt)
+                        time.sleep(attempt * 2)
                         continue
-            except requests.exceptions.Timeout:
-                logger.warning(f"⚠️ Timeout en intento {attempt}/{self.max_retries}")
-                if attempt < self.max_retries:
-                    time.sleep(2 ** attempt)
-                    continue
-            except requests.exceptions.ConnectionError as e:
-                logger.warning(f"⚠️ Error de conexión: {e}")
-                if attempt < self.max_retries:
-                    time.sleep(2 ** attempt)
-                    continue
             except Exception as e:
-                logger.error(f"❌ Error inesperado en API: {e}", exc_info=True)
-                break
-        logger.error("❌ API: Todos los reintentos fallaron")
+                logger.warning(f"⚠️ Error API ({e}). Reintentando...")
+                if attempt < self.max_retries:
+                    time.sleep(attempt * 2)
+                    continue
+        
+        logger.error(f"❌ API: Fallo total en Page {page}")
         return []
 
     def _get_headers(self) -> dict:

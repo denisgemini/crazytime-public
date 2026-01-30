@@ -11,7 +11,7 @@ Este archivo contiene las **Reglas de Oro** y **Prohibiciones** que el agente de
 6. **JAMÁS** realices modificaciones de archivos sin aprobación explícita.
 
 ## ✅ VERDADES INMUTABLES (LO QUE DEBES SABER)
-1. **Fuente de Verdad:** La tabla `tiros` (ID real), la tabla `system_state` (Progreso) y los JSONs en `data/distances/` (Historiales).
+1. **Fuente de Verdad:** La tabla `tiros` (ID real) y la tabla `system_state` (Progreso y Distancias). **PROHIBIDO EL USO DE JSON EN DISCO.**
 2. **Lógica de Ventana:**
    - **Umbral:** Señal de aviso (ej: 50).
    - **Ventana:** Zona de apuesta [Umbral+11, Umbral+40] (ej: [61-90]).
@@ -22,4 +22,4 @@ Este archivo contiene las **Reglas de Oro** y **Prohibiciones** que el agente de
 4. **Intervalo:** Recolección cada 5 minutos (300s).
 
 ## 🎯 OBJETIVO ACTUAL
-Desarrollar la "Caché de Día" para obtener datos en tiempo real (1 min) sin ensuciar la base de datos consolidada.
+Monitoreo estratégico 100% SQLite con latencia cero en alertas.

@@ -52,7 +52,7 @@ class TelegramNotifier:
         hora = alert.timestamp.strftime("%H:%M:%S")
         mensaje = f"""🟡🎰 <b>¡{alert.pattern_name.upper()} ENTRANDO EN CALOR!</b>
 
-🎯 <b>Umbral {alert.threshold} alcanzado</b>
+🎯 <b>Umbral {alert.value} alcanzado</b>
 🔥 La mesa comienza a activarse…
 
 👀 Ingresa al casino y mantente atento.
@@ -69,8 +69,8 @@ Aún no es apuesta — la oportunidad se acerca.
         if "T" in hora_juego:
             hora_juego = hora_juego.split("T")[1][:8]
         
-        mensaje = f"🎉 <b>¡SALIÓ {alert.pattern_name.upper()} EN VENTANA!</b>\n\n"
-        mensaje += f"🎯 <b>Distancia Real:</b> {alert.spin_count} tiros\n"
+        mensaje = f"🎉 <b>¡SALIÓ {alert.pattern_name.upper()}!</b>\n\n"
+        mensaje += f"🎯 <b>Distancia:</b> {alert.spin_count} tiros\n"
 
         # 1. Detalles de Top Slot (Común para todos)
         if details.get("top_slot_matched"):

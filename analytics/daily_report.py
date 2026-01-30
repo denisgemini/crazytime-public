@@ -1,12 +1,9 @@
 """
-analytics/daily_report.py - Generador de reportes diarios estratégicos.
-Enfoque: Análisis puro de VENTANAS DE APUESTA (Wins/Losses).
+analytics/daily_report.py - Reportes diarios estratégicos desde SQLite (v3.0).
 """
 
-import os
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, List
 
 from core.database import Database
@@ -15,16 +12,14 @@ from config.patterns import VIP_PATTERNS, TRACKING_PATTERNS, get_window_range
 logger = logging.getLogger(__name__)
 
 class DailyReportGenerator:
-    """Genera el reporte diario centrado en la rentabilidad de las ventanas."""
+    """Genera el reporte diario centrado en rentabilidad usando exclusivamente la BD."""
 
     def __init__(self, db_path: str = "data/db.sqlite3"):
         self.db = Database(db_path)
-        self.distances_dir = "data/distances"
 
     def generate(self) -> Optional[Dict]:
         """Genera el reporte completo del día (cierre 23:00-23:00)."""
         try:
-            # 1. Obtener estadísticas base de BD
             db_stats = self.db.obtener_estadisticas_dia()
             if db_stats.get("total_spins", 0) == 0:
                 return None
@@ -32,16 +27,14 @@ class DailyReportGenerator:
             start_iso = db_stats["range_start"]
             end_iso = db_stats["range_end"]
 
-            # 2. Procesar Patrones
             patterns_report = []
             all_patterns = VIP_PATTERNS + TRACKING_PATTERNS
             
             for pattern in all_patterns:
-                p_data = self._analyze_pattern_windows(pattern, start_iso, end_iso)
+                p_data = self._analyze_pattern_in_db(pattern, start_iso, end_iso)
                 if p_data:
                     patterns_report.append(p_data)
 
-            # 3. Estructura final
             return {
                 "total_spins": db_stats["total_spins"],
                 "range_start": start_iso,
@@ -49,99 +42,68 @@ class DailyReportGenerator:
                 "patterns": patterns_report,
                 "latidos": db_stats["latidos"]
             }
-
         except Exception as e:
-            logger.error(f"Error generando reporte diario: {e}", exc_info=True)
+            logger.error(f"Error generando reporte diario: {e}")
             return None
 
-    def _analyze_pattern_windows(self, pattern, start_iso, end_iso) -> Optional[Dict]:
-        """Calcula Wins/Losses para las ventanas de apuesta definidas."""
-        filepath = os.path.join(self.distances_dir, f"{pattern.id}.json")
-        if not os.path.exists(filepath):
-            return None
-
+    def _analyze_pattern_in_db(self, pattern, start_iso, end_iso) -> Optional[Dict]:
+        """Analiza ventanas de un patrón consultando la tabla tiros."""
         try:
-            with open(filepath, "r") as f:
-                data = json.load(f)
-            
-            all_occurrences = data.get("occurrences", [])
-            
-            # Conteo de apariciones totales en el día
-            day_count = len([
-                occ for occ in all_occurrences 
-                if start_iso <= occ["timestamp"] < end_iso
-            ])
+            with self.db.get_connection(read_only=True) as conn:
+                cur = conn.cursor()
+                # Obtenemos los tiros del patrón hasta el fin del día
+                cur.execute("""
+                    SELECT id, timestamp FROM tiros 
+                    WHERE resultado = ? AND timestamp < ?
+                    ORDER BY id ASC
+                """, (pattern.value, end_iso))
+                
+                rows = cur.fetchall()
+                if not rows:
+                    return {"id": pattern.id, "name": pattern.name, "count": 0, "windows": []}
 
-            if day_count == 0:
+                # Convertir a lista de dicts
+                occs = [dict(r) for r in rows]
+                
+                # Filtrar conteo de apariciones del día real
+                day_count = len([o for o in occs if o["timestamp"] >= start_iso])
+
+                window_stats = []
+                # Usamos los thresholds definidos en config/patterns.py
+                thresholds = pattern.warning_thresholds
+                
+                for t_def in thresholds:
+                    w_start, w_end = get_window_range(t_def)
+                    hits, misses = 0, 0
+
+                    for i in range(len(occs) - 1):
+                        # La oportunidad nace en occs[i]
+                        # Solo analizamos si el tiro base ocurrió dentro de la jornada
+                        if not (start_iso <= occs[i]["timestamp"] < end_iso):
+                            continue
+                        
+                        # Distancia al siguiente tiro del mismo patrón
+                        dist = occs[i+1]["id"] - occs[i]["id"]
+                        
+                        # Si la distancia es >= inicio de ventana, entramos a jugar
+                        if dist >= w_start:
+                            if dist <= w_end:
+                                hits += 1
+                            else:
+                                misses += 1
+                    
+                    window_stats.append({
+                        "window_range": f"[{w_start}-{w_end}]",
+                        "hits": hits,
+                        "misses": misses
+                    })
+
                 return {
                     "id": pattern.id,
                     "name": pattern.name,
-                    "count": 0,
-                    "windows": []
+                    "count": day_count,
+                    "windows": window_stats
                 }
-
-            # Análisis centrado en VENTANAS
-            window_stats = []
-            
-            # Aunque la config usa 'thresholds' para definir ventanas,
-            # aquí abstraemos eso y hablamos de 'window_zones'.
-            for threshold_def in pattern.thresholds:
-                w_start, w_end = get_window_range(threshold_def)
-                
-                entries = 0  # Veces que entramos a la zona de apuesta
-                wins = 0     # Veces que ganamos DENTRO de la zona
-                losses = 0   # Veces que perdimos (salimos de la zona sin ganar)
-
-                for i in range(len(all_occurrences) - 1):
-                    curr = all_occurrences[i]
-                    
-                    # Filtro de fecha: Solo oportunidades nacidas HOY
-                    if not (start_iso <= curr["timestamp"] < end_iso):
-                        continue
-                    
-                    next_occ = all_occurrences[i+1]
-                    dist = next_occ.get("distance_from_previous")
-                    
-                    if dist is None:
-                        continue
-
-                    # LÓGICA DE NEGOCIO: ZONA DE APUESTA
-                    # 1. ¿Llegamos a la zona de apuesta?
-                    if dist < w_start:
-                        continue # No se entró. No cuenta.
-                    
-                    # Si llegamos aquí, ENTRAMOS a la ventana.
-                    entries += 1
-                    
-                    # 2. Evaluación de Resultado (Win vs Loss)
-                    target_start = curr["spin_id"] + w_start
-                    target_end = curr["spin_id"] + w_end
-                    real_next_id = next_occ["spin_id"]
-
-                    if target_start <= real_next_id <= target_end:
-                        wins += 1
-                    else:
-                        # Si entramos (dist >= w_start) y no fue win, entonces fue loss (> w_end)
-                        losses += 1
-                
-                window_stats.append({
-                    "window_range": f"[{w_start}-{w_end}]", # Identificador puramente de ventana
-                    "entries": entries,
-                    "wins": wins,
-                    "losses": losses,
-                    # Mantener compatibilidad con el template de notificación (temporalmente)
-                    "threshold": threshold_def, 
-                    "hits": wins,
-                    "misses": losses
-                })
-
-            return {
-                "id": pattern.id,
-                "name": pattern.name,
-                "count": day_count,
-                "windows": window_stats
-            }
-
         except Exception as e:
-            logger.error(f"Error analizando ventanas para {pattern.id}: {e}")
+            logger.error(f"Error analizando {pattern.id} en DB: {e}")
             return None
