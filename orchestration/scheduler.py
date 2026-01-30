@@ -101,11 +101,6 @@ class CrazyTimeScheduler:
             processed = self.tracker.process_new_spins()
             if processed > 0:
                 logger.info(f"✅ Tracking: {processed} tiros procesados")
-                from config.patterns import VIP_PATTERNS
-                for pattern in VIP_PATTERNS:
-                    stats = self.tracker.get_pattern_statistics(pattern.id)
-                    if stats:
-                        logger.info(f"   📈 {pattern.name}: Media={stats.get('mean', 0):.1f}, Mediana={stats.get('median', 0)}, Total={stats.get('count', 0)}")
         except Exception as e:
             logger.error(f"❌ Error en tracking: {e}", exc_info=True)
 
@@ -143,8 +138,8 @@ class CrazyTimeScheduler:
             should_analyze = False
 
             for pattern in VIP_PATTERNS:
-                stats = self.tracker.get_pattern_statistics(pattern.id)
-                count = stats.get('count', 0)
+                state = self.tracker.get_pattern_state(pattern.id)
+                count = state.get("prev_distance", 0) if state.get("last_id") else 0
 
                 if count >= 10:
                     should_analyze = True
