@@ -73,12 +73,13 @@ class AlertManager:
         # Regla de Oro: Detectar si hubo hit en este ciclo
         is_hit = tracker_last_id > p_state["last_processed_id"]
 
-        # MANDATO: distance_for_alert = prev_distance if last_distance == 0 else last_distance
-        # Nota: Usamos prev_distance si hay HIT para evaluar los umbrales que se cruzaron JUSTO antes del hit.
+        # Determinar el ID donde comenzó esta racha para calcular el ID exacto de cada umbral
         if is_hit:
             distance_for_thresholds = prev_distance
+            start_id = tracker_last_id - prev_distance
         else:
             distance_for_thresholds = last_distance
+            start_id = tracker_last_id
 
         # =================================================================
         # BLOQUE 1: UMBRALES (Avisos de calor)
@@ -86,13 +87,22 @@ class AlertManager:
         for threshold in pattern.warning_thresholds:
             t_key = str(threshold)
             if distance_for_thresholds >= threshold and not p_state["alerts_sent"].get(t_key):
+                # Calcular el ID del tiro que cruzó el umbral y buscar su hora real
+                threshold_spin_id = start_id + threshold
+                alert_time = datetime.now()
+                spin_data = self.db.get_spin_by_id(threshold_spin_id)
+                if spin_data and spin_data.get("timestamp"):
+                    try:
+                        alert_time = datetime.fromisoformat(spin_data["timestamp"])
+                    except: pass
+
                 alerts.append(Alert(
                     type=AlertType.THRESHOLD_REACHED,
                     pattern_id=pattern.id,
                     pattern_name=pattern.name,
                     value=threshold,
                     spin_count=distance_for_thresholds,
-                    timestamp=datetime.now(),
+                    timestamp=alert_time,
                     details={}
                 ))
                 logger.info(f"🔔 [{pattern.name}] AVISO UMBRAL {threshold} (Dist: {distance_for_thresholds})")
@@ -107,13 +117,21 @@ class AlertManager:
                 start_game_zone = pattern.betting_windows[0][0]
                 if prev_distance >= start_game_zone:
                     details = self._get_hit_details(pattern, tracker_last_id)
+                    
+                    # Obtener hora real del hit desde los detalles
+                    hit_time = datetime.now()
+                    if details.get("timestamp"):
+                        try:
+                            hit_time = datetime.fromisoformat(details["timestamp"])
+                        except: pass
+
                     alerts.append(Alert(
                         type=AlertType.PATTERN_HIT,
                         pattern_id=pattern.id,
                         pattern_name=pattern.name,
                         value=prev_distance,
                         spin_count=prev_distance,
-                        timestamp=datetime.now(),
+                        timestamp=hit_time,
                         details=details
                     ))
                     logger.info(f"🎉 [{pattern.name}] SALIDA DETECTADA (Distancia: {prev_distance})")

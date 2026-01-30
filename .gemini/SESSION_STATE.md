@@ -1,11 +1,14 @@
 # PUNTO DE CONTROL DE SESIÓN
 
 - **Fecha:** Jueves 29 Enero 2026
-- **Hora de Cierre:** 21:30
-- **Estado:** v3.0 Desplegada - Arquitectura Pura SQLite.
-- **Hitos v3.0:**
-    - **Erradicación de JSON:** Se eliminó la carpeta `data/distances/` y todos los archivos de estado en disco.
-    - **SQLite como Fuente Única:** Alertas, distancias y progreso viven exclusivamente en la tabla `system_state`.
-    - **Lógica Anti-Pérdida:** Implementación de `prev_distance` para no perder avisos de umbral cuando el hit ocurre en el mismo ciclo.
-    - **Refactorización Quirúrgica:** Dashboard, Analizador Histórico y Reporte Diario ahora consumen datos directamente de la BD mediante SQL eficiente.
-- **Próxima Tarea:** Monitorear estabilidad del bot con el nuevo flujo y preparar escalado a GCP.
+- **Hora de Cierre:** 23:45
+- **Estado:** v3.0 Desplegada y Sincronizada (Pure SQLite).
+- **Hitos v3.0 Alcanzados:**
+    - **Independencia de Disco:** Erradicación total de la carpeta `data/distances/` y archivos JSON.
+    - **Dashboard v3.0:** Rediseño quirúrgico centrado en **ESPERA**, **TARGET** y **LATEST PAYOUT** (Multiplicadores reales).
+    - **Sincronización LIVE:** Indicador de estado en el Dashboard corregido para mostrar "LIVE" en verde.
+    - **README Estratégico:** Actualización de la Misión y Visión hacia el arbitraje estadístico.
+- **Pendiente / En Investigación:**
+    - **Fallo de Umbral:** Investigar por qué el aviso del Umbral 50 se pierde ocasionalmente cuando el sistema procesa lotes grandes o reinicios.
+    - **Hipótesis:** Race condition en el reset de `alerts_sent` durante un ciclo de HIT.
+- **Próxima Tarea:** Refinar la lógica de `check_pattern` para blindar el envío de umbrales prioritarios.
