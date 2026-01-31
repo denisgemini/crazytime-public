@@ -1,83 +1,132 @@
 """
-scripts/analyze_latidos.py - Auditoría de latidos con visibilidad de cortes de Android.
-Categorías: 0-4s, 5s, 6-11s, >11s (Gaps) y Negativos.
-Muestra los cortes más largos detectados.
+scripts/analyze_latidos.py - Reporte de Latidos Boxed (v4.10)
+Definición de Salud Operativa: Rango 0-11s.
 """
 
 import sqlite3
 import os
-from datetime import datetime
-from pathlib import Path
+import argparse
+import unicodedata
+from datetime import datetime, timedelta
 
-def analyze():
-    root_dir = Path(__file__).resolve().parent.parent
-    db_path = root_dir / "data" / "db.sqlite3"
+DB_PATH = "data/db.sqlite3"
+ANCHO_BOX = 50
+
+def get_disp_w(s):
+    w = 0
+    for c in s:
+        cp = ord(c)
+        if 0xFE00 <= cp <= 0xFE0F: continue
+        if unicodedata.east_asian_width(c) in ('W', 'F', 'A') or 0x1F300 <= cp <= 0x1F9FF:
+            w += 2
+        else:
+            w += 1
+    return w
+
+def pad_l(text, width, align='left'):
+    curr_w = get_disp_w(text)
+    needed = width - curr_w
+    if needed <= 0: return text[:width]
+    if align == 'left': return text + (' ' * needed)
+    if align == 'right': return (' ' * needed) + text
+    l = max(0, needed // 2)
+    r = max(0, needed - l)
+    return (' ' * l) + text + (' ' * r)
+
+def get_esp_day(dt):
+    dias = ["LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"]
+    return dias[dt.weekday()]
+
+def bar(l='╔', m='═', r='╗'):
+    print(f"{l}{m*(ANCHO_BOX-2)}{r}")
+
+def row(text, align='left'):
+    print(f"║ {pad_l(text, 46, align)} ║")
+
+def table_sep(widths, l='╟', m='┼', r='╢', char='─'):
+    parts = [char * (w + 2) for w in widths]
+    linea = f"{l}{m.join(parts)}{r}"
+    if len(linea) < ANCHO_BOX: 
+        linea = linea[:-1] + char*(ANCHO_BOX-len(linea)) + r
+    print(linea[:ANCHO_BOX])
+
+def table_row(cells, widths, total_ref):
+    items = []
+    # Celda 1: Nombre (Left)
+    items.append(pad_l(str(cells[0]), widths[0], 'left'))
+    # Celda 2: Conteo (Right)
+    items.append(pad_l(str(cells[1]), widths[1], 'right'))
+    # Celda 3: % (Right)
+    p = (cells[1] / total_ref * 100) if total_ref > 0 else 0
+    items.append(pad_l(f"{p:.1f}%", widths[2], 'right'))
+    print(f"║ {pad_l(' │ '.join(items), 46, 'left')} ║")
+
+def obtener_datos(periodo="hoy"):
+    if not os.path.exists(DB_PATH): return [], None, None
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        now = datetime.now()
+        if periodo == "hoy": f_ini = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif periodo == "semana":
+            f_ini = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            cur.execute("SELECT MIN(timestamp) FROM tiros"); min_ts = cur.fetchone()[0]
+            try: f_ini = datetime.fromisoformat(min_ts)
+            except: f_ini = now - timedelta(days=30)
+        cur.execute("SELECT latido FROM tiros WHERE timestamp >= ?", (f_ini.isoformat(),))
+        lat = [r['latido'] for r in cur.fetchall()]
+        conn.close()
+        return lat, f_ini, now
+    except: return [], None, None
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--periodo", type=str, default="hoy")
+    args = parser.parse_args()
+    lat, f_ini, f_fin = obtener_datos(args.periodo)
+    if not f_ini: return
+
+    s = {"acel": 0, "est": 0, "len": 0, "gap": 0, "neg": 0, "tot": len(lat)}
+    for l in lat:
+        if l < 0: s["neg"] += 1
+        elif 0 <= l <= 4: s["acel"] += 1
+        elif l == 5: s["est"] += 1
+        elif 6 <= l <= 11: s["len"] += 1
+        else: s["gap"] += 1
     
-    if not db_path.exists():
-        print(f"❌ No se encuentra la base de datos en {db_path}")
-        return
+    # SALUD OPERATIVA = Rango 0 a 11 segundos
+    exitosos = s["acel"] + s["est"] + s["len"]
+    total_real = s["tot"]
+    estabilidad = (exitosos / total_real * 100) if total_real > 0 else 0
+    veredicto = "ÓPTIMA" if estabilidad > 98 else "ESTABLE" if estabilidad > 90 else "INESTABLE"
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
-    today = datetime.now().strftime('%Y-%m-%d')
-
-    def get_data(where_clause="", params=()):
-        cur.execute(f"SELECT id, latido, timestamp, resultado FROM tiros {where_clause} ORDER BY id DESC", params)
-        return [dict(r) for r in cur.fetchall()]
-
-    rows_today = get_data("WHERE timestamp LIKE ?", (f"{today}%",))
-    rows_total = get_data()
-    conn.close()
-
-    def process_stats(rows):
-        if not rows: return None
-        s = {"0_4": 0, "5": 0, "6_11": 0, "gt11": 0, "neg": 0, "total": len(rows), "top_gaps": []}
-        for r in rows:
-            l = r['latido']
-            if l < 0: s["neg"] += 1
-            elif 0 <= l <= 4: s["0_4"] += 1
-            elif l == 5: s["5"] += 1
-            elif 6 <= l <= 11: s["6_11"] += 1
-            else: s["gt11"] += 1
-        
-        # Obtener los 5 mayores gaps
-        s["top_gaps"] = sorted(rows, key=lambda x: x['latido'], reverse=True)[:5]
-        return s
-
-    stats_today = process_stats(rows_today)
-    stats_total = process_stats(rows_total)
-
-    def print_report(s, title):
-        print(f"\n📊 {title}")
-        print("="*55)
-        print(f" {'CATEGORÍA':<20} | {'CONTEO':>8} | {'PORCENTAJE':>10}")
-        print("-" * 55)
-        total = s["total"]
-        print(f" 0 a 4 SEGUNDOS      | {s['0_4']:>8} | {(s['0_4']/total)*100:>9.1f}%")
-        print(f" 5 SEGUNDOS          | {s['5']:>8} | {(s['5']/total)*100:>9.1f}%")
-        print(f" 6 a 11 SEGUNDOS     | {s['6_11']:>8} | {(s['6_11']/total)*100:>9.1f}%")
-        print(f" MAYORES A 11s (Gaps)| {s['gt11']:>8} | {(s['gt11']/total)*100:>9.1f}%")
-        print(f" NEGATIVOS           | {s['neg']:>8} | {(s['neg']/total)*100:>9.1f}%")
-        print("-" * 55)
-        
-        print(" 🕒 TOP 5 MAYORES CORTES (GAPS) DETECTADOS:")
-        for i, g in enumerate(s["top_gaps"], 1):
-            if g['latido'] > 11:
-                h = g['latido'] // 3600
-                m = (g['latido'] % 3600) // 60
-                s_rem = g['latido'] % 60
-                duration = f"{h}h {m}m {s_rem}s" if h > 0 else f"{m}m {s_rem}s"
-                print(f"  {i}. {duration:<12} | ID {g['id']:<5} | {g['timestamp']}")
-        
-        print("="*55)
-
-    if stats_today:
-        print_report(stats_today, f"ESTADO DE HOY ({today})")
+    print("")
+    bar('╔', '═', '╗')
+    t = f"💓 ESTUDIO DE LATIDOS: {get_esp_day(f_ini)} {f_ini.strftime('%d/%m')}"
+    if args.periodo == "semana": t = f"💓 ESTUDIO SEMANAL: {f_ini.strftime('%d/%m')} -> {f_fin.strftime('%d/%m')}"
+    if args.periodo == "total": t = f"💓 ESTUDIO TOTAL: {f_ini.strftime('%d/%m/%y')} -> {f_fin.strftime('%d/%m/%y')}"
+    row(t)
     
-    if stats_total:
-        print_report(stats_total, "RESUMEN HISTÓRICO TOTAL")
+    bar('╠', '═', '╣')
+    row(f"ESTADO : {estabilidad:.1f}% SALUDABLE ({veredicto})")
+    bar('╠', '═', '╣')
+    row(f"SALUD  : {total_real} tiros analizados | {s['neg']} anomalías")
+    bar('╠', '═', '╣')
+    
+    w_cat = [18, 10, 12]
+    print(f"║ {pad_l('CAT.', 18)} │ {pad_l('CONTEO', 10, 'right')} │ {pad_l('%', 12, 'right')} ║")
+    table_sep(w_cat)
+    
+    table_row(["Aceler.ado", s["acel"]], w_cat, total_real)
+    table_row(["Estable.", s["est"]], w_cat, total_real)
+    table_row(["Lento.", s["len"]], w_cat, total_real)
+    table_row(["Gaps.", s["gap"]], w_cat, total_real)
+    table_row(["Negativos", s["neg"]], w_cat, total_real)
+    
+    bar('╚', '═', '╝')
+    print("")
 
 if __name__ == "__main__":
-    analyze()
+    main()

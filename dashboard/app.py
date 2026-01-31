@@ -97,6 +97,14 @@ class StatusResponse(BaseModel):
     total_spins_today: int
     timestamp: str
 
+class DailyStats(BaseModel):
+    total_spins: int
+    results_distribution: Dict[str, int]
+    latidos: Dict[str, int]
+
+class StatsResponse(BaseModel):
+    today_stats: DailyStats
+
 # ============== Helpers ============== 
 
 def calculate_distances_from_db(pattern_value: str, limit: int = 50):
@@ -138,6 +146,17 @@ async def get_status():
         last_result=last_spin['resultado'] if last_spin else None,
         total_spins_today=stats_dia.get('total_spins', 0),
         timestamp=datetime.now().isoformat()
+    )
+
+@app.get("/api/spins/stats", response_model=StatsResponse)
+async def get_stats():
+    stats = db.obtener_estadisticas_dia()
+    return StatsResponse(
+        today_stats=DailyStats(
+            total_spins=stats.get('total_spins', 0),
+            results_distribution=stats.get('counts', {}),
+            latidos=stats.get('latidos', {})
+        )
     )
 
 @app.get("/api/patterns", response_model=PatternsResponse)
@@ -214,7 +233,7 @@ async def get_pattern_distances(pattern_id: str, limit: int = Query(default=50, 
 async def get_recent_spins(limit: int = Query(default=20, ge=1, le=100)):
     spins = db.get_spins_after_id(db.get_max_id() - limit if db.get_max_id() else 0)
     return RecentSpinsResponse(
-        spins=[SpinResult(id=s['id'], resultado=r['resultado'], timestamp=s['timestamp']) 
+        spins=[SpinResult(id=s['id'], resultado=s['resultado'], timestamp=s['timestamp']) 
                for s in reversed(spins)], # Recientes arriba
         count=len(spins)
     )

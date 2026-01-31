@@ -334,17 +334,13 @@ class Database:
             logger.error(f"Error obteniendo último tiro: {e}")
             return None
 
-    def obtener_estadisticas_dia(self, fecha: Optional[str] = None) -> dict:
+    def obtener_estadisticas_rango(self, start_iso: str, end_iso: str) -> dict:
+        """
+        Obtiene estadísticas de tiros en un rango de tiempo específico.
+        Neutral: No calcula fechas, solo consulta lo solicitado.
+        """
         conn = None
         try:
-            # Lógica "Cierre de Jornada": 23:00 ayer a 23:00 hoy
-            now = datetime.now()
-            today_23 = now.replace(hour=23, minute=0, second=0, microsecond=0)
-            yesterday_23 = today_23 - timedelta(days=1)
-            
-            start_str = yesterday_23.isoformat()
-            end_str = today_23.isoformat()
-
             conn = self.get_connection(read_only=True)
             cur = conn.cursor()
             
@@ -352,7 +348,7 @@ class Database:
             cur.execute("""
                 SELECT COUNT(*) FROM tiros 
                 WHERE timestamp >= ? AND timestamp < ?
-            """, (start_str, end_str))
+            """, (start_iso, end_iso))
             total_spins = cur.fetchone()[0]
             
             # 2. Conteos por resultado
@@ -361,7 +357,7 @@ class Database:
                 FROM tiros
                 WHERE timestamp >= ? AND timestamp < ?
                 GROUP BY resultado
-            """, (start_str, end_str))
+            """, (start_iso, end_iso))
             conteos = dict(cur.fetchall())
 
             # 3. Estadísticas de Latidos
@@ -374,7 +370,7 @@ class Database:
                     SUM(CASE WHEN latido < 0 THEN 1 ELSE 0 END) as l_neg
                 FROM tiros
                 WHERE timestamp >= ? AND timestamp < ?
-            """, (start_str, end_str))
+            """, (start_iso, end_iso))
             
             l_stats = cur.fetchone()
             latidos = {
@@ -389,8 +385,8 @@ class Database:
             
             return {
                 "total_spins": total_spins,
-                "range_start": start_str,
-                "range_end": end_str,
+                "range_start": start_iso,
+                "range_end": end_iso,
                 "counts": {
                     "1": conteos.get("1", 0), "2": conteos.get("2", 0),
                     "5": conteos.get("5", 0), "10": conteos.get("10", 0),
@@ -402,8 +398,15 @@ class Database:
                 "latidos": latidos
             }
         except Exception as e:
-            logger.error(f"Error obteniendo estadísticas: {e}")
+            logger.error(f"Error obteniendo estadísticas en rango: {e}")
             return {"total_spins": 0}
         finally:
             if conn:
                 conn.close()
+
+    def obtener_estadisticas_dia(self, fecha: Optional[str] = None) -> dict:
+        """Wrapper mantenido por compatibilidad, calcula el día natural."""
+        now = datetime.now()
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return self.obtener_estadisticas_rango(start.isoformat(), end.isoformat())

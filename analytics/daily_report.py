@@ -18,14 +18,19 @@ class DailyReportGenerator:
         self.db = Database(db_path)
 
     def generate(self) -> Optional[Dict]:
-        """Genera el reporte completo del día (cierre 23:00-23:00)."""
+        """Genera el reporte completo del día (cierre estratégico 23:00-23:00)."""
         try:
-            db_stats = self.db.obtener_estadisticas_dia()
+            # Lógica "Cierre de Jornada": 23:00 ayer a 23:00 hoy
+            now = datetime.now()
+            today_23 = now.replace(hour=23, minute=0, second=0, microsecond=0)
+            yesterday_23 = today_23 - timedelta(days=1)
+            
+            start_iso = yesterday_23.isoformat()
+            end_iso = today_23.isoformat()
+
+            db_stats = self.db.obtener_estadisticas_rango(start_iso, end_iso)
             if db_stats.get("total_spins", 0) == 0:
                 return None
-
-            start_iso = db_stats["range_start"]
-            end_iso = db_stats["range_end"]
 
             patterns_report = []
             all_patterns = VIP_PATTERNS + TRACKING_PATTERNS
