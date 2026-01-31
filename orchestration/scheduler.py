@@ -68,6 +68,10 @@ class CrazyTimeScheduler:
                     self._process_tracking()
                     self._process_alerts()
 
+            # Si fue una recuperación (más de 1 lote), mostrar resumen explícito
+            if len(batches) > 1:
+                logger.info(f"✅ RECUPERACIÓN EXITOSA: Se inyectaron un total de {total_new_spins} tiros en {len(batches)} lotes.")
+
             # Análisis de ventanas y tareas programadas (una sola vez al final del superciclo)
             if total_new_spins > 0:
                 self._run_window_analysis()
