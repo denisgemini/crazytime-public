@@ -73,10 +73,11 @@ Optimizado para **ejecución 24/7 en entornos de bajos recursos** (GCP Free Tier
 - ✅ Formato HTML enriquecido con multiplicadores y fotos de patrones
 
 ### 🌐 Dashboard Web v3.0
-- ✅ Visualización centrada en **ESPERA**, **TARGET** y **LATEST PAYOUT**
-- ✅ Indicador **LIVE** sincronizado con el estado del servicio
-- ✅ Histogramas de distribución calculados en tiempo real vía SQL
-- ✅ Responsive Design neón optimizado para monitores de casino
+- ✅ **Enfoque VIP:** Visualización exclusiva de Pachinko y Crazy Time (Sin ruido).
+- ✅ **Lógica de Ventanas:** Indicadores visuales de "Zona de Espera", "Preparar" y "Zona de Juego (Neón)".
+- ✅ **Indicador LIVE:** Semáforo real sincronizado con el estado del servicio (`service_running`).
+- ✅ **Histograma Detallado:** 10 barras incluyendo Bonus individuales (PK, CH, CF, CT) y Secuencias (2→5, 5→2).
+- ✅ **Estadísticas Neutrales:** Conteo de tiros basado en Día Natural (00:00-23:59) vs Reportes Analíticos (23:00-23:00).
 
 ---
 

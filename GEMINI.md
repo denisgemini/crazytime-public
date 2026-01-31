@@ -19,4 +19,7 @@ Este archivo contiene las **Reglas de Oro** y **Prohibiciones** que el agente de
 4. **Intervalo de Recolección:** 5 minutos (300s) para estabilidad, con Escalera de Recuperación infinita (soporta hasta 72h de caída).
 
 ## 🎯 OBJETIVO ACTUAL
-Estabilizar el sistema de alertas SQLite para garantizar que ningún umbral se pierda, incluso durante apariciones simultáneas en el mismo lote.
+Monitoreo de Estabilidad 24h de la versión v3.0 Stable.
+
+## 📝 TAREA PARA MAÑANA
+Verificar la integridad de los datos tras el ciclo nocturno completo. Ejecutar `scripts/analyze_latidos.py` y `scripts/analyze_brechas.py` para confirmar que la lógica de 5 minutos y la recuperación de escaleras funcionaron sin interrupciones. Validar que no haya conteos erróneos en el Dashboard al inicio del día.
