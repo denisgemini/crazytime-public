@@ -74,6 +74,7 @@ class PatternStatus(BaseModel):
     current_distance: int
     last_distance: Optional[int]
     thresholds: List[int]
+    betting_windows: List[List[int]]
 
 class PatternsResponse(BaseModel):
     patterns: List[PatternStatus]
@@ -92,6 +93,7 @@ class AlertsResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     status: str
+    service_running: bool
     last_spin_id: int
     last_result: Optional[str]
     total_spins_today: int
@@ -101,11 +103,41 @@ class DailyStats(BaseModel):
     total_spins: int
     results_distribution: Dict[str, int]
     latidos: Dict[str, int]
+    sequences: Dict[str, int]
 
 class StatsResponse(BaseModel):
     today_stats: DailyStats
 
 # ============== Helpers ============== 
+
+def contar_secuencias(db_instance: Database, start_iso: str, end_iso: str) -> Dict[str, int]:
+    """Cuenta secuencias 2->5 y 5->2 usando LEAD."""
+    try:
+        with db_instance.get_connection(read_only=True) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                WITH pares AS (
+                    SELECT 
+                        resultado,
+                        LEAD(resultado) OVER (ORDER BY id) as siguiente
+                    FROM tiros
+                    WHERE timestamp >= ? AND timestamp < ?
+                )
+                SELECT 
+                    SUM(CASE WHEN resultado='2' AND siguiente='5' THEN 1 ELSE 0 END) as seq_2_5,
+                    SUM(CASE WHEN resultado='5' AND siguiente='2' THEN 1 ELSE 0 END) as seq_5_2
+                FROM pares
+            """, (start_iso, end_iso))
+            row = cur.fetchone()
+            if row:
+                return {
+                    "2-5": row["seq_2_5"] or 0,
+                    "5-2": row["seq_5_2"] or 0
+                }
+            return {"2-5": 0, "5-2": 0}
+    except Exception as e:
+        logging.error(f"Error contando secuencias: {e}")
+        return {"2-5": 0, "5-2": 0}
 
 def calculate_distances_from_db(pattern_value: str, limit: int = 50):
     """Calcula distancias e historial directamente desde la tabla tiros"""
@@ -142,6 +174,7 @@ async def get_status():
     stats_dia = db.obtener_estadisticas_dia()
     return StatusResponse(
         status="active" if last_spin else "idle",
+        service_running=True if last_spin else False,
         last_spin_id=last_spin['id'] if last_spin else 0,
         last_result=last_spin['resultado'] if last_spin else None,
         total_spins_today=stats_dia.get('total_spins', 0),
@@ -151,11 +184,15 @@ async def get_status():
 @app.get("/api/spins/stats", response_model=StatsResponse)
 async def get_stats():
     stats = db.obtener_estadisticas_dia()
+    # Calcular secuencias usando el mismo rango que la DB usó internamente (Día Natural por defecto)
+    seqs = contar_secuencias(db, stats["range_start"], stats["range_end"])
+    
     return StatsResponse(
         today_stats=DailyStats(
             total_spins=stats.get('total_spins', 0),
             results_distribution=stats.get('counts', {}),
-            latidos=stats.get('latidos', {})
+            latidos=stats.get('latidos', {}),
+            sequences=seqs
         )
     )
 
@@ -164,12 +201,16 @@ async def get_patterns():
     current_max_id = db.get_max_id() or 0
     patterns = []
     
-    for p in VIP_PATTERNS + TRACKING_PATTERNS:
+    # SOLO VIPs: Pachinko y CrazyTime
+    for p in VIP_PATTERNS:
         # Obtener estado oficial desde system_state
         p_state = db.get_state("pattern_tracker", p.id, {"last_id": None, "last_distance": 0})
         last_id = p_state.get("last_id")
         
         spins_since = current_max_id - last_id if last_id else 0
+        
+        # Convertir tuplas (61, 90) a listas [61, 90] para JSON
+        windows_list = [list(w) for w in p.betting_windows]
         
         patterns.append(PatternStatus(
             pattern_id=p.id,
@@ -177,7 +218,8 @@ async def get_patterns():
             spins_since=spins_since,
             current_distance=spins_since,
             last_distance=p_state.get("last_distance"),
-            thresholds=p.warning_thresholds
+            thresholds=p.warning_thresholds,
+            betting_windows=windows_list
         ))
     return PatternsResponse(patterns=patterns, last_updated=datetime.now().isoformat())
 
